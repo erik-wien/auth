@@ -1,0 +1,25 @@
+{
+    "name": "erikr/auth",
+    "description": "Shared auth, session, CSRF, logging and mailer library",
+    "type": "library",
+    "require": {
+        "phpmailer/phpmailer": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.0"
+    },
+    "autoload": {
+        "files": [
+            "src/log.php",
+            "src/csrf.php",
+            "src/auth.php",
+            "src/mailer.php",
+            "src/bootstrap.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ErikR\\Auth\\Tests\\": "tests/"
+        }
+    }
+}
