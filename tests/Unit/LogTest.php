@@ -37,6 +37,9 @@ class LogTest extends TestCase
         $this->assertCount(2, $_SESSION['alerts']);
     }
 
+    // TODO: auth_require() tests validate logic inline rather than calling the real function.
+    // Testing functions that call header() + exit() requires runInSeparateProcess or
+    // a dedicated test harness. The guard condition is verified here as a proxy.
     public function test_auth_require_exits_when_not_logged_in(): void
     {
         unset($_SESSION['loggedin']);

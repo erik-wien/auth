@@ -32,12 +32,15 @@ function appendLog(mysqli $con, string $context, string $activity, string $origi
         "INSERT INTO {$table} (idUser, context, activity, origin, ipAdress, logTime)
          VALUES (?, ?, ?, ?, INET_ATON(?), CURRENT_TIMESTAMP)"
     );
-    $id = $_SESSION['id'] ?? 1;
+    if ($stmt === false) {
+        return false;
+    }
+    $id = $_SESSION['id'] ?? 0;
     $ip = getUserIpAddr();
     $stmt->bind_param('issss', $id, $context, $activity, $origin, $ip);
-    $stmt->execute();
+    $result = $stmt->execute();
     $stmt->close();
-    return true;
+    return $result;
 }
 
 /**
