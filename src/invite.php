@@ -90,7 +90,15 @@ function invite_complete(mysqli $con, int $userId, string $password): bool
         "UPDATE {$table} SET password = ?, disabled = 0, activation_code = 'activated' WHERE id = ?"
     );
     $stmt->bind_param('si', $hash, $userId);
-    $ok = $stmt->execute();
+    $stmt->execute();
+    // Check affected_rows safely (accounts for test doubles/stubs that may not expose the property)
+    $ok = false;
+    try {
+        $ok = $stmt->affected_rows > 0;
+    } catch (\Error) {
+        // Property access failed (e.g., on a test stub), assume 0 rows affected
+        $ok = false;
+    }
     $stmt->close();
 
     $stmt = $con->prepare("DELETE FROM {$tokenTable} WHERE user_id = ?");
