@@ -103,6 +103,50 @@ class AdminTest extends TestCase
         $this->assertMatchesRegularExpression('/DELETE FROM.*auth_accounts/i', $sqls[0]);
     }
 
+    // ── admin_reset_password ──────────────────────────────────────────────────
+
+    public function test_reset_password_returns_false_for_unknown_user(): void
+    {
+        $result = $this->createStub(\mysqli_result::class);
+        $result->method('fetch_assoc')->willReturn(null);
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')->willReturn(true);
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('get_result')->willReturn($result);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')->willReturn($stmt);
+
+        $this->assertFalse(admin_reset_password($con, 999, 'http://localhost/app'));
+    }
+
+    public function test_reset_password_issues_select_sql(): void
+    {
+        $sqls = [];
+
+        $result = $this->createStub(\mysqli_result::class);
+        $result->method('fetch_assoc')->willReturn(null); // user not found — keeps test simple
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')->willReturn(true);
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('get_result')->willReturn($result);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')
+            ->willReturnCallback(function (string $s) use (&$sqls, $stmt) {
+                $sqls[] = $s;
+                return $stmt;
+            });
+
+        admin_reset_password($con, 7, 'http://localhost/app');
+
+        $this->assertMatchesRegularExpression('/SELECT.*FROM.*auth_accounts/i', $sqls[0]);
+    }
+
     // ── admin_edit_user ───────────────────────────────────────────────────────
 
     public function test_edit_user_coerces_invalid_rights_to_user(): void
@@ -135,7 +179,7 @@ class AdminTest extends TestCase
 
         admin_edit_user($con, 1, 'user@example.com', 'SuperAdmin', 0, 0);
 
-        // bind_param signature: ('ssssi', $email, $rights, $disabled, $debug, $id)
+        // bind_param signature: ('ssiii', $email, $rights, $disabled, $debug, $id)
         // Index 0: type string, Index 2: rights value
         $this->assertSame('User', $capturedParams[2]);
     }

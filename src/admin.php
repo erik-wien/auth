@@ -114,7 +114,10 @@ function admin_create_user(
     $stmt->close();
 
     $token = invite_create_token($con, $userId);
-    invite_send_email($email, $username, $token, $baseUrl);
+    $sent  = invite_send_email($email, $username, $token, $baseUrl);
+    if (!$sent) {
+        appendLog($con, 'admin', "Failed to send invite email to $email for user #$userId.", 'web');
+    }
 
     return $userId;
 }
@@ -139,7 +142,7 @@ function admin_edit_user(
     $stmt = $con->prepare(
         "UPDATE {$table} SET email = ?, rights = ?, disabled = ?, debug = ? WHERE id = ?"
     );
-    $stmt->bind_param('ssssi', $email, $rights, $disabled, $debug, $targetId);
+    $stmt->bind_param('ssiii', $email, $rights, $disabled, $debug, $targetId);
     $stmt->execute();
     try {
         $ok = $stmt->affected_rows > 0;
