@@ -91,12 +91,11 @@ function invite_complete(mysqli $con, int $userId, string $password): bool
     );
     $stmt->bind_param('si', $hash, $userId);
     $stmt->execute();
-    // Check affected_rows safely (accounts for test doubles/stubs that may not expose the property)
-    $ok = false;
+    // affected_rows is a readonly property on real mysqli_stmt.
+    // PHPUnit 13 stubs on PHP 8.5 block direct property access — catch defensively.
     try {
         $ok = $stmt->affected_rows > 0;
     } catch (\Error) {
-        // Property access failed (e.g., on a test stub), assume 0 rows affected
         $ok = false;
     }
     $stmt->close();
