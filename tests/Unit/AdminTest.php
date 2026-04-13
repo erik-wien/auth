@@ -9,7 +9,7 @@ class AdminTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /** Build a generic stub con where all prepare() calls return $stmt. */
-    private function stubCon(\mysqli_stmt $stmt = null): \mysqli
+    private function stubCon(?\mysqli_stmt $stmt = null): \mysqli
     {
         if ($stmt === null) {
             $stmt = $this->createStub(\mysqli_stmt::class);
@@ -23,7 +23,7 @@ class AdminTest extends TestCase
     }
 
     /** Build a stub con that records all SQL strings passed to prepare(). */
-    private function captureCon(array &$sqls, \mysqli_stmt $stmt = null): \mysqli
+    private function captureCon(array &$sqls, ?\mysqli_stmt $stmt = null): \mysqli
     {
         if ($stmt === null) {
             $stmt = $this->createStub(\mysqli_stmt::class);
@@ -108,16 +108,32 @@ class AdminTest extends TestCase
     public function test_edit_user_coerces_invalid_rights_to_user(): void
     {
         $capturedParams = null;
-        $stmt = $this->createMock(\mysqli_stmt::class);
-        $stmt->method('bind_param')
-             ->willReturnCallback(function () use (&$capturedParams) {
-                 $capturedParams = func_get_args();
-                 return true;
-             });
-        $stmt->method('execute')->willReturn(true);
-        $stmt->method('close')->willReturn(true);
 
-        admin_edit_user($this->stubCon($stmt), 1, 'user@example.com', 'SuperAdmin', 0, 0);
+        // UPDATE stmt — captures bind_param args so we can inspect the rights value.
+        $updateStmt = $this->createStub(\mysqli_stmt::class);
+        $updateStmt->method('bind_param')
+                   ->willReturnCallback(function () use (&$capturedParams) {
+                       $capturedParams = func_get_args();
+                       return true;
+                   });
+        $updateStmt->method('execute')->willReturn(true);
+        $updateStmt->method('close')->willReturn(true);
+
+        // Generic stmt for all other queries (appendLog INSERT INTO auth_log).
+        $logStmt = $this->createStub(\mysqli_stmt::class);
+        $logStmt->method('bind_param')->willReturn(true);
+        $logStmt->method('execute')->willReturn(true);
+        $logStmt->method('close')->willReturn(true);
+
+        // Route UPDATE queries to $updateStmt; everything else to $logStmt.
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')->willReturnCallback(
+            fn(string $sql) => str_starts_with(strtoupper(ltrim($sql)), 'UPDATE')
+                ? $updateStmt
+                : $logStmt
+        );
+
+        admin_edit_user($con, 1, 'user@example.com', 'SuperAdmin', 0, 0);
 
         // bind_param signature: ('ssssi', $email, $rights, $disabled, $debug, $id)
         // Index 0: type string, Index 2: rights value

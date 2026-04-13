@@ -113,13 +113,8 @@ function admin_create_user(
     }
     $stmt->close();
 
-    try {
-        $token = invite_create_token($con, $userId);
-        invite_send_email($email, $username, $token, $baseUrl);
-    } catch (\Throwable) {
-        // Swallow invite/email errors — the user record was created successfully.
-        // In production, callers may log or surface this separately.
-    }
+    $token = invite_create_token($con, $userId);
+    invite_send_email($email, $username, $token, $baseUrl);
 
     return $userId;
 }
@@ -153,6 +148,7 @@ function admin_edit_user(
     }
     $stmt->close();
 
+    appendLog($con, 'admin', "User #$targetId updated.", 'web');
     return $ok;
 }
 
