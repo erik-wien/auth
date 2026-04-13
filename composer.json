@@ -15,6 +15,7 @@
             "src/csrf.php",
             "src/auth.php",
             "src/mailer.php",
+            "src/invite.php",
             "src/bootstrap.php"
         ]
     },
