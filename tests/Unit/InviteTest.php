@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=0);
 
 namespace ErikR\Auth\Tests\Unit;
 
@@ -27,6 +28,7 @@ class InviteTest extends TestCase
 
         return $con;
     }
+
 
     /** Build a stub mysqli_result that returns $row on the first fetch_assoc() call. */
     private function stubResult(?array $row): \mysqli_result
@@ -66,7 +68,7 @@ class InviteTest extends TestCase
         $stmt->method('execute')->willReturn(true);
         $stmt->method('close')->willReturn(true);
 
-        $con = $this->createMock(\mysqli::class);
+        $con = $this->createStub(\mysqli::class);
         $con->method('prepare')
             ->willReturnCallback(function (string $s) use (&$sql, $stmt) {
                 $sql = $s;
@@ -75,6 +77,16 @@ class InviteTest extends TestCase
 
         invite_create_token($con, 7);
         $this->assertStringContainsString('REPLACE INTO', strtoupper($sql));
+    }
+
+    // ── invite_send_email ─────────────────────────────────────────────────────
+
+    public function test_send_email_returns_false_when_smtp_unreachable(): void
+    {
+        // SMTP_HOST is 127.0.0.1:1025 (defined in bootstrap.php) — connection will fail.
+        // invite_send_email() must catch the exception and return false.
+        $result = invite_send_email('user@example.com', 'Alice', 'token123', 'http://localhost/app');
+        $this->assertFalse($result);
     }
 
     // ── invite_verify_token ───────────────────────────────────────────────────
@@ -108,7 +120,7 @@ class InviteTest extends TestCase
         $stmt->method('execute')->willReturn(true);
         $stmt->method('close')->willReturn(true);
 
-        $con = $this->createMock(\mysqli::class);
+        $con = $this->createStub(\mysqli::class);
         $con->method('prepare')
             ->willReturnCallback(function (string $s) use (&$sqls, $stmt) {
                 $sqls[] = $s;
