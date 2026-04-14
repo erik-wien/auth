@@ -125,6 +125,7 @@ function admin_create_user(
 /**
  * Update a user's common fields.
  * Rights values not in ['Admin', 'User'] are silently coerced to 'User'.
+ * When $totp_reset is true, also sets totp_secret = NULL.
  *
  * @return bool True if the row was updated.
  */
@@ -134,7 +135,8 @@ function admin_edit_user(
     string $email,
     string $rights,
     int    $disabled,
-    int    $debug
+    int    $debug,
+    bool   $totp_reset = false
 ): bool {
     $table  = AUTH_DB_PREFIX . 'auth_accounts';
     $rights = in_array($rights, ['Admin', 'User'], true) ? $rights : 'User';
@@ -151,7 +153,14 @@ function admin_edit_user(
     }
     $stmt->close();
 
-    appendLog($con, 'admin', "User #$targetId updated.", 'web');
+    if ($totp_reset) {
+        $upd = $con->prepare("UPDATE {$table} SET totp_secret = NULL WHERE id = ?");
+        $upd->bind_param('i', $targetId);
+        $upd->execute();
+        $upd->close();
+    }
+
+    appendLog($con, 'admin', "User #$targetId updated." . ($totp_reset ? ' 2FA reset.' : ''), 'web');
     return $ok;
 }
 
