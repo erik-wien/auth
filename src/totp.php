@@ -154,14 +154,7 @@ function auth_totp_confirm(mysqli $con, int $userId, string $secret, string $cod
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare("UPDATE {$table} SET totp_secret = ? WHERE id = ?");
     $stmt->bind_param('si', $secret, $userId);
-    $stmt->execute();
-    // affected_rows is a native property on real mysqli_stmt.
-    // PHPUnit 13 stubs on PHP 8.5 block direct property access — catch defensively.
-    try {
-        $ok = $stmt->affected_rows > 0;
-    } catch (\Error) {
-        $ok = false;
-    }
+    $ok = $stmt->execute() && $stmt->affected_rows > 0;
     $stmt->close();
     return $ok;
 }

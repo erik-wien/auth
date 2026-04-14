@@ -148,11 +148,14 @@ class TotpTest extends TestCase
 
         $sqls   = [];
         $params = [];
-        $con    = $this->captureCon($sqls, $params);
+        // execute() returns false so the && short-circuits before affected_rows
+        // is read — PHPUnit stubs on PHP 8.5 cannot expose internal properties.
+        // The test only verifies that the correct UPDATE SQL was issued.
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('execute')->willReturn(false);
+        $stmt->method('close')->willReturn(true);
+        $con = $this->captureCon($sqls, $params, $stmt);
 
-        // auth_totp_confirm checks $stmt->affected_rows > 0, which returns 0 on
-        // a PHPUnit stub (property is read-only on internal classes).  We verify
-        // the UPDATE was issued rather than asserting the boolean return value.
         auth_totp_confirm($con, 1, $secret, $code);
         $this->assertCount(1, $sqls);
         $this->assertMatchesRegularExpression('/UPDATE.*auth_accounts.*SET totp_secret/i', $sqls[0]);
