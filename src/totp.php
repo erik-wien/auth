@@ -130,6 +130,7 @@ function auth_totp_uri(string $secret, string $label, string $issuer): string
 function auth_totp_enable(mysqli $con, int $userId): ?string
 {
     $table = AUTH_DB_PREFIX . 'auth_accounts';
+    // Guard: return null for unknown users to avoid generating QR codes for deleted accounts.
     $stmt  = $con->prepare("SELECT id FROM {$table} WHERE id = ?");
     $stmt->bind_param('i', $userId);
     $stmt->execute();
@@ -153,12 +154,7 @@ function auth_totp_confirm(mysqli $con, int $userId, string $secret, string $cod
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare("UPDATE {$table} SET totp_secret = ? WHERE id = ?");
     $stmt->bind_param('si', $secret, $userId);
-    $stmt->execute();
-    try {
-        $ok = $stmt->affected_rows > 0;
-    } catch (\Error) {
-        $ok = false;
-    }
+    $ok = $stmt->execute() && $stmt->affected_rows > 0;
     $stmt->close();
     return $ok;
 }
@@ -170,6 +166,7 @@ function auth_totp_disable(mysqli $con, int $userId): void
 {
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare("UPDATE {$table} SET totp_secret = NULL WHERE id = ?");
+    if ($stmt === false) return;
     $stmt->bind_param('i', $userId);
     try {
         $stmt->execute();
