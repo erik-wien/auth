@@ -287,15 +287,13 @@ function auth_login(mysqli $con, string $username, string $password): array {
     $stmt->bind_param('s', $username);
     $stmt->execute();
     $result = $stmt->get_result();
+    $row    = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
 
-    if ($result->num_rows === 0) {
-        $stmt->close();
+    if ($row === null) {
         auth_record_failure($ip);
         return ['ok' => false, 'error' => 'Benutzername und Kennwort stimmen nicht überein.'];
     }
-
-    $row = $result->fetch_assoc();
-    $stmt->close();
 
     if ($row['activation_code'] !== 'activated') {
         return ['ok' => false, 'error' => 'Benutzer ist noch nicht aktiviert.'];
