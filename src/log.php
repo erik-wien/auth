@@ -48,11 +48,13 @@ function appendLog(mysqli $con, string $context, string $activity, string $origi
 
 /**
  * Redirect to login.php if the session is not authenticated.
- * Derives the app base path from SCRIPT_NAME (e.g. /energie → /energie/login.php).
+ * Derives the app base path from SCRIPT_NAME.
+ * Works for both subpath installs (/energie/index.php → /energie)
+ * and vhost-root installs (/index.php → '').
  */
 function auth_require(): void {
     if (empty($_SESSION['loggedin'])) {
-        $base = '/' . explode('/', ltrim($_SERVER['SCRIPT_NAME'], '/'))[0];
+        $base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
         header('Location: ' . $base . '/login.php');
         exit;
     }
