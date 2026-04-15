@@ -26,7 +26,10 @@ function addAlert(string $type, string $message): void {
  * Insert a row into auth_log.
  * Uses the global $con MySQLi connection.
  */
-function appendLog(mysqli $con, string $context, string $activity, string $origin = 'web'): bool {
+function appendLog(mysqli $con, string $context, string $activity, string $origin = ''): bool {
+    if ($origin === '') {
+        $origin = defined('APP_SLUG') ? APP_SLUG : 'web';
+    }
     $table = AUTH_DB_PREFIX . 'auth_log';
     $stmt = $con->prepare(
         "INSERT INTO {$table} (idUser, context, activity, origin, ipAdress, logTime)
