@@ -30,7 +30,7 @@ Sender identity is also per-app: each app sets its own `SMTP_FROM` (`energie@jar
 Four functions added to the auth library. The generic function is the mechanism; the typed helpers are the consumer-facing surface.
 
 ```php
-// Generic dispatcher — loads templates/email/{$template}.tpl, renders, sends.
+// Generic dispatcher — loads templates/email/{$template}.md, renders, sends.
 function send_templated_mail(
     string $template,
     string $toEmail,
@@ -55,26 +55,58 @@ Three template files ship in `auth/templates/email/`:
 
 | File | Sent when |
 |---|---|
-| `invite.tpl` | Admin creates a user via `admin_invite_user()` or resets their password via `admin_password_reset()` — user clicks link, sets password. |
-| `password_reset.tpl` | User clicks "forgot password" on login page; app generates a `password_resets` token and calls this helper. |
-| `email_change_confirmation.tpl` | User changes email in preferences; confirmation link is sent to the **new** address. |
+| `invite.md` | Admin creates a user via `admin_invite_user()` or resets their password via `admin_password_reset()` — user clicks link, sets password. |
+| `password_reset.md` | User clicks "forgot password" on login page; app generates a `password_resets` token and calls this helper. |
+| `email_change_confirmation.md` | User changes email in preferences; confirmation link is sent to the **new** address. |
 
 ### Template file format
 
-One file per email type. Three sections: header line with subject, a `---` separator, then the HTML body. Example (`password_reset.tpl`):
+One `.md` file per email type. YAML-style frontmatter holds the subject; the body is Markdown. Both the HTML and plain-text mail variants are derived from the same Markdown source at send time — no HTML/text drift is possible. Example (`password_reset.md`):
 
-```
-Subject: Kennwort zurücksetzen – {{app_name}}
+```markdown
 ---
-<p>Hallo {{username}},</p>
-<p>Wir haben eine Anfrage für ein neues Kennwort für Ihr {{app_name}}-Konto erhalten.</p>
-<p><a href="{{link}}">Kennwort zurücksetzen</a></p>
-<p>Dieser Link ist eine Stunde gültig. Wenn Sie keine Zurücksetzung beantragt haben, können Sie diese E-Mail ignorieren.</p>
-<p>Bei Fragen antworten Sie nicht auf diese E-Mail, sondern schreiben an <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>
-<p>Team {{app_name}}</p>
+subject: Kennwort zurücksetzen – {{app_name}}
+---
+
+Hallo {{username}},
+
+Wir haben eine Anfrage für ein neues Kennwort für Ihr {{app_name}}-Konto erhalten.
+
+[Kennwort zurücksetzen]({{link}})
+
+Dieser Link ist eine Stunde gültig. Wenn Sie keine Zurücksetzung beantragt haben, können Sie diese E-Mail ignorieren.
+
+Bei Fragen antworten Sie nicht auf diese E-Mail, sondern schreiben an [{{support_email}}](mailto:{{support_email}}).
+
+Team {{app_name}}
 ```
 
-The HTML body is the only content written. The plain-text variant is generated at send time.
+Renders to HTML:
+
+```html
+<p>Hallo Alice,</p>
+<p>Wir haben eine Anfrage für ein neues Kennwort für Ihr Energie-Konto erhalten.</p>
+<p><a href="https://energie.eriks.cloud/executeReset.php?token=…">Kennwort zurücksetzen</a></p>
+<p>Dieser Link ist eine Stunde gültig. Wenn Sie keine Zurücksetzung beantragt haben, können Sie diese E-Mail ignorieren.</p>
+<p>Bei Fragen antworten Sie nicht auf diese E-Mail, sondern schreiben an <a href="mailto:contact@eriks.cloud">contact@eriks.cloud</a>.</p>
+<p>Team Energie</p>
+```
+
+And plain text:
+
+```
+Hallo Alice,
+
+Wir haben eine Anfrage für ein neues Kennwort für Ihr Energie-Konto erhalten.
+
+Kennwort zurücksetzen: https://energie.eriks.cloud/executeReset.php?token=…
+
+Dieser Link ist eine Stunde gültig. Wenn Sie keine Zurücksetzung beantragt haben, können Sie diese E-Mail ignorieren.
+
+Bei Fragen antworten Sie nicht auf diese E-Mail, sondern schreiben an contact@eriks.cloud.
+
+Team Energie
+```
 
 ### Available placeholders
 
@@ -97,25 +129,26 @@ A template that references a placeholder not present in the merged `$vars` throw
 
 ### Rendering pipeline
 
-Lives in `src/mail_template.php`, roughly 50–80 LoC:
+Lives in `src/mail_template.php`, roughly 40–60 LoC. No new Composer dependency — the library ships a small Markdown subset renderer sized to what our templates need.
 
-1. Read the template file from `auth/templates/email/{$template}.tpl`. Missing file → throw.
-2. Split on the first line that is exactly `---`. Header section above; HTML body below.
-3. Parse `Subject:` line from the header.
-4. Substitute `{{key}}` placeholders:
-   - In the **HTML body**: replace with `htmlspecialchars($vars[$key], ENT_QUOTES, 'UTF-8')`. Applies to every value including `{{link}}` (URLs need `&` → `&amp;` inside `href`).
-   - In the **subject line**: replace with the raw value (subject is plain text, not HTML). Safe because all placeholder values are short trusted strings (app name, support email, username, URL) — none are HTML.
-5. Generate the plain-text variant from the rendered HTML body via a small converter:
-   - `<p>X</p>` → `X\n\n`
-   - `<br>` / `<br/>` / `<br />` → `\n`
-   - `<a href="URL">URL</a>` → `URL`
-   - `<a href="URL">TEXT</a>` (TEXT ≠ URL) → `TEXT: URL`
-   - Decode these entities: `&amp; &lt; &gt; &quot; &nbsp; &uuml; &auml; &ouml; &szlig; &Uuml; &Auml; &Ouml;`
-   - Strip all remaining tags.
-   - Collapse three or more consecutive `\n` to two.
-6. Call internal `smtp_send($toEmail, $toName, $subject, $renderedHtml, $generatedText)`.
+1. Read `auth/templates/email/{$template}.md`. Missing file → throw.
+2. Parse frontmatter: if the file starts with a `---` line, capture everything up to the next `---` line as the header. Extract `subject:` (everything else in the header is ignored for now).
+3. Substitute `{{key}}` placeholders:
+   - In the **subject line**: replace with the raw value (subject is plain text, not HTML).
+   - In the **Markdown body source**: replace with the raw value *before* Markdown parsing, so values containing `[` or `]` or `(` can't accidentally form link syntax. (All current values are short trusted strings — app name, support email, username, URL — so this is defense-in-depth.)
+4. Split the body into paragraphs on runs of two or more newlines.
+5. For each paragraph:
+   - Scan for `[text](url)` link syntax. For each match, record `(text, url)`.
+   - **HTML output:** replace each match with `<a href="$urlEscaped">$textEscaped</a>`. Run the remainder of the paragraph text through `htmlspecialchars($text, ENT_QUOTES, 'UTF-8')`. Wrap in `<p>…</p>`.
+   - **Text output:** replace each match with `$text: $url` — or just `$url` when `$text === $url` (collapses the "click [https://…](https://…)" case to a single URL).
+6. Join HTML paragraphs with `\n`. Join text paragraphs with `\n\n`.
+7. Call internal `smtp_send($toEmail, $toName, $subject, $htmlBody, $textBody)`.
 
-Our current templates use only `<p>` and `<a>` — the converter does not need to handle lists, tables, or inline styling. If a future template needs richer HTML, we extend the converter then.
+### Markdown subset supported
+
+- Paragraphs (blank-line separated).
+- Inline links `[text](url)`, including `mailto:` URLs.
+- Everything else is passed through verbatim. No headings, lists, code blocks, bold/italic. Our current emails don't use them; if a template grows to need any, extend the converter then — don't pull in a full CommonMark parser speculatively.
 
 ## Config contract
 
@@ -157,12 +190,12 @@ One coordinated change across six repos. Library change can't ship without app c
 
 ### auth library
 
-1. Add `src/mail_template.php` — template parser, placeholder substitution, HTML→text converter, generic `send_templated_mail()`.
+1. Add `src/mail_template.php` — frontmatter parser, placeholder substitution, Markdown-subset renderer (emits HTML + plain text from one source), generic `send_templated_mail()`.
 2. Add typed helpers `mail_send_invite`, `mail_send_password_reset`, `mail_send_email_change_confirmation` in `src/mailer.php`.
 3. Move SMTP host/port/user/pass into library-internal namespace. `auth_bootstrap()` reads `/opt/homebrew/etc/jardyx-mail.ini`.
 4. Rename public `send_mail()` → internal `\Erikr\Auth\Mail\smtp_send()`.
 5. Replace `invite_send_email()` call sites in `src/admin.php` with `mail_send_invite()`. Remove `invite_send_email()`.
-6. Add `templates/email/invite.tpl`, `password_reset.tpl`, `email_change_confirmation.tpl`. Content matches today's hand-written HTML, generalised via `{{app_name}}` / `{{support_email}}`.
+6. Add `templates/email/invite.md`, `password_reset.md`, `email_change_confirmation.md`. Content is Markdown, generalised via `{{app_name}}` / `{{support_email}}` placeholders; wording matches today's hand-written German copy.
 
 ### Per-app changes
 
@@ -203,15 +236,17 @@ New PHPUnit tests in `auth/tests/Unit/`.
 
 ### `MailTemplateTest.php` — renderer unit tests
 
-Uses fixture templates under `tests/fixtures/email/` so renderer tests don't couple to shipping-template wording.
+Uses fixture templates under `tests/fixtures/email/*.md` so renderer tests don't couple to shipping-template wording.
 
-- `testParsesSubjectAndBody`
-- `testSubstitutesPlaceholders`
-- `testHtmlEscapesSubstitutedValues` — e.g. `$vars['username'] = '<script>'` renders as `&lt;script&gt;`
+- `testParsesFrontmatterSubject`
+- `testSubstitutesPlaceholdersInSubjectAndBody`
+- `testHtmlEscapesSubstitutedValuesInHtmlOutput` — e.g. `$vars['username'] = '<script>'` renders as `&lt;script&gt;` in the HTML variant; unchanged in the text variant.
 - `testThrowsOnMissingPlaceholder`
 - `testThrowsOnUnknownTemplate`
-- `testGeneratesTextFromHtml` — `<p>`, `<br>`, `<a href>` (link text = URL, and != URL), German entities, other tags
-- `testCollapsesConsecutiveNewlines`
+- `testRendersMarkdownParagraphsToHtmlAndText`
+- `testRendersLinkWithDistinctText` — `[Kennwort zurücksetzen](https://…)` → HTML `<a>`, text `Kennwort zurücksetzen: https://…`
+- `testCollapsesLinkWithSameTextAndUrl` — `[https://…](https://…)` → text `https://…` (no duplicated URL)
+- `testPassesThroughNonLinkCharacters` — literal `*`, `_`, `#` in Markdown body survive unchanged (no accidental formatting).
 
 ### `ShippingTemplatesTest.php` — smoke test the real templates
 
@@ -238,4 +273,4 @@ Test command unchanged: `composer test` in `auth/`.
 None blocking. Deferred items (may become follow-ups):
 
 - If Jardyx later gains a white-label app with a different brand, `MAIL_FROM_ADDRESS` / `MAIL_FROM_NAME` become per-app again. Trivial to refactor from constants to config at that point.
-- If a template grows richer HTML (lists, tables, embedded images), extend the HTML→text converter at that point — not now.
+- If a template grows richer Markdown (lists, headings, emphasis, embedded images), extend the subset renderer at that point — or switch to a full CommonMark parser (`league/commonmark`) if the subset gets unwieldy. Don't pull the dependency in speculatively.
