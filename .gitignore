@@ -3,3 +3,11 @@
 /.phpunit.result.cache
 .DS_Store
 /data/ratelimit.json
+
+# Personal / agent workflow — not for publication
+CLAUDE.md
+.claude/
+docs/superpowers/
+update.md
+.env
+.env.*
