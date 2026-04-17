@@ -66,12 +66,20 @@ function substitute_placeholders(string $tpl, array $vars): string
 
 /**
  * Subset-Markdown to HTML: paragraphs (blank-line separated) + inline [text](url) links.
- * Everything else is passed through as-is, HTML-escaped.
+ * A paragraph consisting only of `---` becomes `<hr />`. Trailing whitespace at the end
+ * of a line within a paragraph becomes `<br />`. Everything else is passed through
+ * as-is, HTML-escaped.
  */
 function markdown_to_html(string $md): string
 {
     $paragraphs = preg_split('/\n[ \t]*\n+/', trim($md));
-    $htmlParas = array_map(fn(string $p) => '<p>' . _inline_md_to_html($p) . '</p>', $paragraphs);
+    $htmlParas = array_map(function (string $p): string {
+        if (trim($p) === '---') {
+            return '<hr />';
+        }
+        $inner = _inline_md_to_html($p);
+        return '<p>' . preg_replace('/[ \t]+\n/', "<br />\n", $inner) . '</p>';
+    }, $paragraphs);
     return implode("\n", $htmlParas);
 }
 
