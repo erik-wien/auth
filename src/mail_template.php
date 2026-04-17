@@ -63,3 +63,34 @@ function substitute_placeholders(string $tpl, array $vars): string
         $tpl
     );
 }
+
+/**
+ * Subset-Markdown to HTML: paragraphs (blank-line separated) + inline [text](url) links.
+ * Everything else is passed through as-is, HTML-escaped.
+ */
+function markdown_to_html(string $md): string
+{
+    $paragraphs = preg_split('/\n[ \t]*\n+/', trim($md));
+    $htmlParas = array_map(fn(string $p) => '<p>' . _inline_md_to_html($p) . '</p>', $paragraphs);
+    return implode("\n", $htmlParas);
+}
+
+/** Internal: convert [text](url) within a single paragraph, HTML-escape everything else. */
+function _inline_md_to_html(string $para): string
+{
+    $out = '';
+    $i = 0;
+    $len = strlen($para);
+    while ($i < $len) {
+        if ($para[$i] === '[' && preg_match('/\[([^\]]+)\]\(([^)]+)\)/A', $para, $m, 0, $i)) {
+            $text = htmlspecialchars($m[1], ENT_QUOTES, 'UTF-8');
+            $url  = htmlspecialchars($m[2], ENT_QUOTES, 'UTF-8');
+            $out .= '<a href="' . $url . '">' . $text . '</a>';
+            $i += strlen($m[0]);
+            continue;
+        }
+        $out .= htmlspecialchars($para[$i], ENT_QUOTES, 'UTF-8');
+        $i++;
+    }
+    return $out;
+}
