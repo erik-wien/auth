@@ -94,3 +94,29 @@ function _inline_md_to_html(string $para): string
     }
     return $out;
 }
+
+/**
+ * Subset-Markdown to plain text: paragraphs separated by blank lines, links rendered as
+ * `text: url` (or just `url` when the visible text equals the URL character-for-character,
+ * and similarly for `[addr](mailto:addr)`).
+ */
+function markdown_to_text(string $md): string
+{
+    $paragraphs = preg_split('/\n[ \t]*\n+/', trim($md));
+    $textParas  = array_map('\\Erikr\\Auth\\Mail\\_inline_md_to_text', $paragraphs);
+    return implode("\n\n", $textParas);
+}
+
+/** Internal: collapse [text](url) within a single paragraph to plain-text form. */
+function _inline_md_to_text(string $para): string
+{
+    return preg_replace_callback(
+        '/\[([^\]]+)\]\(([^)]+)\)/',
+        function (array $m): string {
+            if ($m[1] === $m[2]) return $m[2];
+            if (str_starts_with($m[2], 'mailto:') && substr($m[2], 7) === $m[1]) return $m[1];
+            return $m[1] . ': ' . $m[2];
+        },
+        $para
+    );
+}
