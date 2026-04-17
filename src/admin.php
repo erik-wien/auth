@@ -146,7 +146,9 @@ function admin_edit_user(
     $stmt = $con->prepare(
         "UPDATE {$table} SET email = ?, rights = ?, disabled = ?, debug = ? WHERE id = ?"
     );
-    $stmt->bind_param('ssiii', $email, $rights, $disabled, $debug, $targetId);
+    $disabledEnum = $disabled ? '1' : '0';
+    $debugEnum    = $debug    ? '1' : '0';
+    $stmt->bind_param('ssssi', $email, $rights, $disabledEnum, $debugEnum, $targetId);
     $stmt->execute();
     try {
         $ok = $stmt->affected_rows > 0;
