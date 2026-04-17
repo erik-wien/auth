@@ -75,22 +75,29 @@ function markdown_to_html(string $md): string
     return implode("\n", $htmlParas);
 }
 
-/** Internal: convert [text](url) within a single paragraph, HTML-escape everything else. */
+/** Internal: convert [text](url) within a single paragraph, HTML-escape everything else.
+ *  Splits on link spans so non-link chunks stay intact multibyte strings — escaping
+ *  byte-by-byte would drop UTF-8 continuation bytes (e.g. "Für" → "Fr"). */
 function _inline_md_to_html(string $para): string
 {
+    $pattern = '/\[([^\]]+)\]\(([^)]+)\)/';
     $out = '';
-    $i = 0;
-    $len = strlen($para);
-    while ($i < $len) {
-        if ($para[$i] === '[' && preg_match('/\[([^\]]+)\]\(([^)]+)\)/A', $para, $m, 0, $i)) {
-            $text = htmlspecialchars($m[1], ENT_QUOTES, 'UTF-8');
-            $url  = htmlspecialchars($m[2], ENT_QUOTES, 'UTF-8');
-            $out .= '<a href="' . $url . '">' . $text . '</a>';
-            $i += strlen($m[0]);
-            continue;
+    $offset = 0;
+    if (preg_match_all($pattern, $para, $matches, PREG_OFFSET_CAPTURE | PREG_SET_ORDER)) {
+        foreach ($matches as $m) {
+            [$full, $pos] = $m[0];
+            $text = $m[1][0];
+            $url  = $m[2][0];
+            if ($pos > $offset) {
+                $out .= htmlspecialchars(substr($para, $offset, $pos - $offset), ENT_QUOTES, 'UTF-8');
+            }
+            $out .= '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">'
+                  . htmlspecialchars($text, ENT_QUOTES, 'UTF-8') . '</a>';
+            $offset = $pos + strlen($full);
         }
-        $out .= htmlspecialchars($para[$i], ENT_QUOTES, 'UTF-8');
-        $i++;
+    }
+    if ($offset < strlen($para)) {
+        $out .= htmlspecialchars(substr($para, $offset), ENT_QUOTES, 'UTF-8');
     }
     return $out;
 }
