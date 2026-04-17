@@ -147,4 +147,16 @@ class MailTemplateTest extends TestCase
             __DIR__ . '/../fixtures/email'
         );
     }
+
+    public function test_send_templated_mail_returns_false_on_transport_failure(): void
+    {
+        $ok = \Erikr\Auth\Mail\send_templated_mail(
+            'fixture_simple',
+            'alice@example.com',
+            'Alice',
+            ['who' => 'Alice'],
+            __DIR__ . '/../fixtures/email'
+        );
+        $this->assertFalse($ok);
+    }
 }

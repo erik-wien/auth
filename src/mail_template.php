@@ -148,3 +148,23 @@ function render_template(string $template, array $vars, ?string $templatesDir = 
         'text'    => markdown_to_text($bodyFilled),
     ];
 }
+
+/**
+ * Render a template and dispatch via smtp_send. Returns true on success, false on any
+ * transport or config failure (same contract as the old invite_send_email).
+ */
+function send_templated_mail(
+    string $template,
+    string $toEmail,
+    string $toName,
+    array $vars,
+    ?string $templatesDir = null
+): bool {
+    $rendered = render_template($template, $vars, $templatesDir);
+    try {
+        smtp_send($toEmail, $toName, $rendered['subject'], $rendered['html'], $rendered['text']);
+        return true;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
