@@ -19,6 +19,7 @@
             "src/invite.php",
             "src/admin.php",
             "src/totp.php",
+            "src/avatar.php",
             "src/bootstrap.php"
         ]
     },

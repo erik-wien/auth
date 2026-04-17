@@ -277,7 +277,8 @@ function auth_login(mysqli $con, string $username, string $password): array {
     }
 
     $stmt = $con->prepare(
-        "SELECT id, username, password, email, img, img_type,
+        "SELECT id, username, password, email,
+                (img_blob IS NOT NULL) AS has_avatar,
                 activation_code, disabled, invalidLogins, debug, rights, theme, totp_secret
          FROM {$table} WHERE username = ?"
     );
@@ -369,9 +370,7 @@ function _auth_setup_session(mysqli $con, array $row): void
     $_SESSION['id']         = (int) $row['id'];
     $_SESSION['username']   = $row['username'];
     $_SESSION['email']      = $row['email'];
-    $_SESSION['img']        = $row['img'];
-    $_SESSION['img_type']   = $row['img_type'];
-    $_SESSION['has_avatar'] = !empty($row['img_type']);
+    $_SESSION['has_avatar'] = (bool) ($row['has_avatar'] ?? false);
     $_SESSION['disabled']   = $row['disabled'];
     $_SESSION['debug']      = $row['debug'];
     $_SESSION['rights']     = $row['rights'];
@@ -442,6 +441,34 @@ function auth_totp_complete(mysqli $con, string $code): array
 /**
  * Log the user out: write log entry, destroy session, expire sId cookie.
  */
+/**
+ * Change a user's password.
+ *
+ * Hashes with bcrypt cost 13 (the library standard — never reimplement in
+ * consumer apps; see ~/.claude/rules/auth-rules.md §1), updates auth_accounts,
+ * resets invalidLogins to 0, and logs the change to auth_log. Returns true on
+ * a successful UPDATE, false if the row didn't exist.
+ *
+ * Use from password-change forms and reset-completion flows. The caller is
+ * responsible for verifying the old password (or the reset token) before
+ * calling — this function unconditionally rewrites the hash.
+ */
+function auth_change_password(mysqli $con, int $userId, string $newPassword): bool
+{
+    $hash  = password_hash($newPassword, PASSWORD_BCRYPT, ['cost' => 13]);
+    $table = AUTH_DB_PREFIX . 'auth_accounts';
+    $stmt  = $con->prepare("UPDATE {$table} SET password = ?, invalidLogins = 0 WHERE id = ?");
+    $stmt->bind_param('si', $hash, $userId);
+    $stmt->execute();
+    $changed = $stmt->affected_rows > 0;
+    $stmt->close();
+
+    if ($changed) {
+        appendLog($con, 'npw', "Password changed for user #$userId.", 'web');
+    }
+    return $changed;
+}
+
 function auth_logout(mysqli $con): void {
     if (!empty($_SESSION['username'])) {
         appendLog($con, 'log', $_SESSION['username'] . ' logged out.', 'web');

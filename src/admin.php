@@ -190,8 +190,52 @@ function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): bool
 }
 
 /**
+ * Register a cleanup callback invoked before an auth_accounts row is deleted.
+ *
+ * Use this for cross-DB tables that reference auth_accounts.id but cannot use
+ * ON DELETE CASCADE because they live in a different database (e.g.
+ * wlmonitor.wl_preferences, energie.en_preferences). Same-DB tables should use
+ * a real FK constraint instead — see ~/.claude/rules/auth-rules.md §5.
+ *
+ * The callback signature is: function(mysqli $con, int $userId): void
+ * Thrown exceptions are caught and logged to auth_log — a failing cleanup does
+ * NOT abort the user deletion, because a half-deleted account is worse than an
+ * orphan pref row.
+ *
+ * Hooks fire in registration order. Register at app bootstrap (e.g. in
+ * inc/initialize.php after the auth library is loaded).
+ */
+function admin_register_delete_cleanup(callable $fn): void
+{
+    static $registered = [];
+    // Use a static holder in a module-scoped function so we avoid $GLOBALS.
+    // The internal _admin_delete_cleanups() reaches in via the same static.
+    $registered[] = $fn;
+    _admin_delete_cleanups($registered);
+}
+
+/**
+ * @internal — returns the current cleanup-hook list. Passing a non-null
+ * argument updates the stored list.
+ *
+ * @param list<callable>|null $set
+ * @return list<callable>
+ */
+function _admin_delete_cleanups(?array $set = null): array
+{
+    static $hooks = [];
+    if ($set !== null) {
+        $hooks = $set;
+    }
+    return $hooks;
+}
+
+/**
  * Permanently delete a user account.
  * Self-deletion is blocked: returns false if $targetId === $requestingUserId.
+ *
+ * Cleanup hooks registered via admin_register_delete_cleanup() run before the
+ * DELETE. Hook failures are logged but do not abort the deletion.
  *
  * @return bool True if a row was deleted.
  */
@@ -199,6 +243,19 @@ function admin_delete_user(mysqli $con, int $targetId, int $requestingUserId): b
 {
     if ($targetId === $requestingUserId) {
         return false;
+    }
+
+    foreach (_admin_delete_cleanups() as $hook) {
+        try {
+            $hook($con, $targetId);
+        } catch (\Throwable $e) {
+            appendLog(
+                $con,
+                'admin',
+                "Delete cleanup failed for user #{$targetId}: " . $e->getMessage(),
+                'web'
+            );
+        }
     }
 
     $table = AUTH_DB_PREFIX . 'auth_accounts';
