@@ -72,15 +72,25 @@ function substitute_placeholders(string $tpl, array $vars): string
  */
 function markdown_to_html(string $md): string
 {
-    $paragraphs = preg_split('/\n[ \t]*\n+/', trim($md));
-    $htmlParas = array_map(function (string $p): string {
-        if (trim($p) === '---') {
-            return '<hr />';
+    // A line consisting only of --- is a horizontal rule and breaks out of the
+    // surrounding paragraph, even without blank lines around it. Split on those
+    // first, then split each piece on blank lines to get paragraphs.
+    $text = "\n" . trim($md) . "\n";
+    $pieces = preg_split('/\n[ \t]*---[ \t]*(?=\n)/', $text);
+    $out = [];
+    foreach ($pieces as $i => $piece) {
+        if ($i > 0) {
+            $out[] = '<hr />';
         }
-        $inner = _inline_md_to_html($p);
-        return '<p>' . preg_replace('/[ \t]+\n/', "<br />\n", $inner) . '</p>';
-    }, $paragraphs);
-    return implode("\n", $htmlParas);
+        $piece = trim($piece, "\n");
+        if ($piece === '') continue;
+        foreach (preg_split('/\n[ \t]*\n+/', $piece) as $p) {
+            if ($p === '') continue;
+            $inner = _inline_md_to_html($p);
+            $out[] = '<p>' . preg_replace('/[ \t]+\n/', "<br />\n", $inner) . '</p>';
+        }
+    }
+    return implode("\n", $out);
 }
 
 /** Internal: convert [text](url) within a single paragraph, HTML-escape everything else.
