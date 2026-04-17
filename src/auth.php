@@ -260,7 +260,7 @@ function auth_auto_blacklist(mysqli $con, string $ip): void {
  * @return array ['ok' => true, 'username' => string]
  *            or ['ok' => false, 'error' => string]
  */
-function auth_login(mysqli $con, string $username, string $password): array {
+function auth_login(mysqli $con, string $username, string $password, bool $remember = false): array {
     $ip    = getUserIpAddr();
     $table = AUTH_DB_PREFIX . 'auth_accounts';
 
@@ -334,11 +334,12 @@ function auth_login(mysqli $con, string $username, string $password): array {
             'user_data' => $row,
             'until'     => time() + 300,
             'attempts'  => 0,
+            'remember'  => $remember,
         ];
         return ['ok' => true, 'totp_required' => true];
     }
 
-    _auth_setup_session($con, $row);
+    _auth_setup_session($con, $row, $remember);
     return ['ok' => true, 'username' => $row['username']];
 }
 
@@ -348,7 +349,7 @@ function auth_login(mysqli $con, string $username, string $password): array {
  *
  * @internal
  */
-function _auth_setup_session(mysqli $con, array $row): void
+function _auth_setup_session(mysqli $con, array $row, bool $remember = false): void
 {
     $table = AUTH_DB_PREFIX . 'auth_accounts';
 
@@ -389,6 +390,10 @@ function _auth_setup_session(mysqli $con, array $row): void
         $upd->bind_param('i', $row['id']);
         $upd->execute();
         $upd->close();
+    }
+
+    if ($remember) {
+        auth_remember_issue($con, (int) $row['id']);
     }
 
     appendLog($con, 'auth', $row['username'] . ' logged in.');
@@ -433,8 +438,9 @@ function auth_totp_complete(mysqli $con, string $code): array
         return ['ok' => false, 'error' => 'Ungültiger Code.'];
     }
 
+    $remember = !empty($pending['remember']);
     unset($_SESSION['auth_totp_pending']);
-    _auth_setup_session($con, $row);
+    _auth_setup_session($con, $row, $remember);
     return ['ok' => true];
 }
 
@@ -477,6 +483,10 @@ function auth_change_password(mysqli $con, int $userId, string $newPassword): bo
     $stmt->close();
 
     if ($changed) {
+        // Invalidate every remember-me token: a password change must log out
+        // every other device, including the one that owned a "keep me logged
+        // in" cookie.
+        auth_remember_delete_all($con, $userId);
         appendLog($con, 'npw', "Password changed for user #$userId.");
     }
     return $changed;
@@ -486,6 +496,7 @@ function auth_logout(mysqli $con): void {
     if (!empty($_SESSION['username'])) {
         appendLog($con, 'log', $_SESSION['username'] . ' logged out.');
     }
+    auth_remember_delete_current($con);
     session_destroy();
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                || (int) ($_SERVER['SERVER_PORT'] ?? 80) === 443;

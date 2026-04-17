@@ -12,11 +12,14 @@
  *
  * Does NOT require_once other library files — Composer autoload.files handles that.
  *
- * @param array $cspExtras Keyed by CSP directive, value is extra sources to append.
+ * @param array       $cspExtras Keyed by CSP directive, value is extra sources to append.
  *   Example: ['script-src' => 'https://cdn.jsdelivr.net', 'font-src' => 'https://fonts.gstatic.com']
  *   Each key may appear once; multiple sources: space-separate them in the value string.
+ * @param mysqli|null $con       If provided, enables "keep me logged in" cookie
+ *   restoration and cross-subdomain SSO. When null, remember-me is skipped
+ *   (useful for very early bootstrap paths that run before $con exists).
  */
-function auth_bootstrap(array $cspExtras = []): void {
+function auth_bootstrap(array $cspExtras = [], ?mysqli $con = null): void {
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                || (int) ($_SERVER['SERVER_PORT'] ?? 80) === 443;
 
@@ -98,5 +101,16 @@ function auth_bootstrap(array $cspExtras = []): void {
                 'samesite' => 'Lax',
             ]);
         }
+    }
+
+    // ── "Keep me logged in" + cross-subdomain SSO ─────────────────────────────
+    //
+    // If no active session exists but the caller supplied $con and the user's
+    // browser carries a valid remember-me cookie (possibly set by a different
+    // app on the same parent domain), rebuild the session transparently.
+    // TOTP-protected accounts are skipped inside auth_remember_try_restore().
+
+    if ($con !== null && empty($_SESSION['loggedin']) && !empty($_COOKIE[AUTH_REMEMBER_COOKIE])) {
+        auth_remember_try_restore($con);
     }
 }

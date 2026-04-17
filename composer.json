@@ -22,6 +22,7 @@
             "src/admin.php",
             "src/totp.php",
             "src/avatar.php",
+            "src/remember.php",
             "src/bootstrap.php"
         ]
     },
