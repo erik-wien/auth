@@ -68,7 +68,7 @@ function auth_bootstrap(array $cspExtras = []): void {
         'cookie_lifetime' => 60 * 60 * 24 * 4,
         'cookie_httponly' => true,
         'cookie_secure'   => $isHttps,
-        'cookie_samesite' => 'Strict',
+        'cookie_samesite' => 'Lax',
         'use_strict_mode' => true,
     ];
 
@@ -76,19 +76,26 @@ function auth_bootstrap(array $cspExtras = []): void {
 
     if (empty($_SESSION['sId'])) {
         if (isset($_COOKIE['sId']) && preg_match('/^[a-zA-Z0-9\-]{22,128}$/', $_COOKIE['sId'])) {
-            // Restore a previous session from the sId cookie.
+            // Attempt to restore a previous session from the sId cookie.
             session_abort();
             session_id($_COOKIE['sId']);
             session_start($sessionOpts);
-        } else {
-            // Brand-new session.
+            // use_strict_mode may reject a stale/unknown sId and silently create a new
+            // session with a different ID, leaving $_SESSION['sId'] empty.  Fall through
+            // to the initialisation block below so every request in this browser gets a
+            // consistent session rather than each request creating an independent one
+            // (which would break CSRF token continuity between login.php and authentication.php).
+        }
+        // Whether we just attempted restoration or arrived with no sId cookie at all,
+        // initialise sId if it is still unset (brand-new session or strict-mode rejection).
+        if (empty($_SESSION['sId'])) {
             $_SESSION['sId'] = session_id();
             setcookie('sId', $_SESSION['sId'], [
                 'expires'  => time() + 60 * 60 * 24 * 4,
                 'path'     => '/',
                 'httponly' => true,
                 'secure'   => $isHttps,
-                'samesite' => 'Strict',
+                'samesite' => 'Lax',
             ]);
         }
     }
