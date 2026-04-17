@@ -102,4 +102,49 @@ class MailTemplateTest extends TestCase
         $out = \Erikr\Auth\Mail\markdown_to_text('Schreiben an [unser Support](mailto:foo@example.com).');
         $this->assertSame('Schreiben an unser Support: mailto:foo@example.com.', $out);
     }
+
+    public function test_render_template_produces_subject_html_and_text(): void
+    {
+        $out = \Erikr\Auth\Mail\render_template(
+            'fixture_simple',
+            ['who' => 'Alice'],
+            __DIR__ . '/../fixtures/email'
+        );
+        $this->assertSame('Test subject for Alice', $out['subject']);
+        $this->assertStringContainsString('<p>Hello Alice, this is a test.</p>', $out['html']);
+        $this->assertStringContainsString('<p>Second paragraph.</p>', $out['html']);
+        $this->assertStringContainsString("Hello Alice, this is a test.\n\nSecond paragraph.", $out['text']);
+    }
+
+    public function test_render_template_substitutes_inside_link(): void
+    {
+        $out = \Erikr\Auth\Mail\render_template(
+            'fixture_with_link',
+            ['app_name' => 'Energie', 'link' => 'https://example.com/x'],
+            __DIR__ . '/../fixtures/email'
+        );
+        $this->assertSame('Click here Energie', $out['subject']);
+        $this->assertStringContainsString('<a href="https://example.com/x">Click me</a>', $out['html']);
+        $this->assertSame('Click me: https://example.com/x', $out['text']);
+    }
+
+    public function test_render_template_throws_on_unknown_template(): void
+    {
+        $this->expectException(\Erikr\Auth\Mail\TemplateException::class);
+        \Erikr\Auth\Mail\render_template(
+            'this_template_does_not_exist',
+            [],
+            __DIR__ . '/../fixtures/email'
+        );
+    }
+
+    public function test_render_template_throws_on_missing_placeholder(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        \Erikr\Auth\Mail\render_template(
+            'fixture_simple',
+            [],
+            __DIR__ . '/../fixtures/email'
+        );
+    }
 }

@@ -120,3 +120,31 @@ function _inline_md_to_text(string $para): string
         $para
     );
 }
+
+/**
+ * Default directory for shipping templates.
+ * Overridable via $templatesDir argument (used by tests pointing at fixtures).
+ */
+const TEMPLATES_DIR = __DIR__ . '/../templates/email';
+
+/**
+ * Load a template file, substitute {{vars}}, produce subject + HTML + text.
+ *
+ * @return array{subject: string, html: string, text: string}
+ */
+function render_template(string $template, array $vars, ?string $templatesDir = null): array
+{
+    $dir  = $templatesDir ?? TEMPLATES_DIR;
+    $path = $dir . '/' . $template . '.md';
+    if (!is_file($path)) {
+        throw new TemplateException("Template not found: $path");
+    }
+    [$fm, $body]    = parse_frontmatter((string) file_get_contents($path));
+    $subject        = substitute_placeholders($fm['subject'] ?? '', $vars);
+    $bodyFilled     = substitute_placeholders($body, $vars);
+    return [
+        'subject' => $subject,
+        'html'    => markdown_to_html($bodyFilled),
+        'text'    => markdown_to_text($bodyFilled),
+    ];
+}
