@@ -1,10 +1,11 @@
 <?php
 /**
- * src/invite.php — User invitation and password-set flow.
+ * src/invite.php — Invite token management (create, verify, complete).
+ *
+ * Sending the invite email lives in src/mail_helpers.php (`mail_send_invite`).
  *
  * Requires:
  *  - AUTH_DB_PREFIX constant  (e.g. 'jardyx_auth.' or '')
- *  - SMTP_* constants + send_mail() from src/mailer.php
  *  - appendLog() from src/log.php
  */
 
@@ -28,32 +29,6 @@ function invite_create_token(mysqli $con, int $userId): string
     $stmt->close();
 
     return $token;
-}
-
-/**
- * Send "Set your password" email to the user.
- * Link: {baseUrl}/setpassword.php?token={token}
- *
- * @return bool True on success; false if the mailer throws.
- */
-function invite_send_email(string $email, string $username, string $token, string $baseUrl): bool
-{
-    $link    = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
-    $subject = 'Passwort einrichten';
-    $bodyHtml = '<p>Hallo ' . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . ',</p>'
-              . '<p>Bitte richten Sie Ihr Passwort ein:</p>'
-              . '<p><a href="' . htmlspecialchars($link, ENT_QUOTES, 'UTF-8') . '">'
-              . htmlspecialchars($link, ENT_QUOTES, 'UTF-8') . '</a></p>'
-              . '<p>Dieser Link ist 48&nbsp;Stunden g&uuml;ltig.</p>';
-    $bodyText = "Hallo $username,\n\nBitte richten Sie Ihr Passwort ein:\n$link\n\n"
-              . "Dieser Link ist 48 Stunden gültig.";
-
-    try {
-        send_mail($email, $username, $subject, $bodyHtml, $bodyText);
-        return true;
-    } catch (\Throwable $e) {
-        return false;
-    }
 }
 
 /**

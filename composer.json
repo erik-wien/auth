@@ -17,6 +17,7 @@
             "src/auth.php",
             "src/mailer.php",
             "src/mail_template.php",
+            "src/mail_helpers.php",
             "src/invite.php",
             "src/admin.php",
             "src/totp.php",

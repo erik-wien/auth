@@ -4,7 +4,8 @@
  *
  * Requires:
  *  - AUTH_DB_PREFIX constant (e.g. 'jardyx_auth.' or '')
- *  - invite_create_token(), invite_send_email() from src/invite.php
+ *  - invite_create_token() from src/invite.php
+ *  - mail_send_invite() from src/mail_helpers.php
  *  - appendLog() from src/log.php
  */
 
@@ -114,7 +115,8 @@ function admin_create_user(
     $stmt->close();
 
     $token = invite_create_token($con, $userId);
-    $sent  = invite_send_email($email, $username, $token, $baseUrl);
+    $link  = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
+    $sent  = mail_send_invite($email, $username, $link);
     if (!$sent) {
         appendLog($con, 'admin', "Failed to send invite email to $email for user #$userId.", 'web');
     }
@@ -183,7 +185,8 @@ function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): bool
     }
 
     $token = invite_create_token($con, $targetId);
-    $sent  = invite_send_email($row['email'], $row['username'], $token, $baseUrl);
+    $link  = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
+    $sent  = mail_send_invite($row['email'], $row['username'], $link);
 
     appendLog($con, 'admin', "Password reset sent to user #$targetId.", 'web');
     return $sent;

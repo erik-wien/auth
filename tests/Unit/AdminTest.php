@@ -47,7 +47,8 @@ class AdminTest extends TestCase
         $sqls = [];
         $con  = $this->captureCon($sqls);
 
-        // invite_send_email will try send_mail → connection refused → caught internally.
+        // mail_send_invite will fail because no jardyx-mail.ini exists in the test env —
+        // admin_create_user logs the failure and continues.
         admin_create_user($con, 'alice', 'alice@example.com', 'User', 'http://localhost/app');
 
         $this->assertMatchesRegularExpression('/INSERT INTO.*auth_accounts/i', $sqls[0]);
