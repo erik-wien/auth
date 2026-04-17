@@ -207,7 +207,7 @@ function auth_blacklist_ip(mysqli $con, string $ip, string $reason = '', ?int $e
     $stmt->bind_param('sss', $ip, $reason, $expires);
     $stmt->execute();
     $stmt->close();
-    appendLog($con, 'blacklist', "Manually blacklisted IP: {$ip} — {$reason}", 'web');
+    appendLog($con, 'blacklist', "Manually blacklisted IP: {$ip} — {$reason}");
 }
 
 /**
@@ -220,7 +220,7 @@ function auth_unblacklist_ip(mysqli $con, string $ip): void {
     $stmt->bind_param('s', $ip);
     $stmt->execute();
     $stmt->close();
-    appendLog($con, 'blacklist', "Unblacklisted IP: {$ip}", 'web');
+    appendLog($con, 'blacklist', "Unblacklisted IP: {$ip}");
 }
 
 /**
@@ -237,7 +237,7 @@ function auth_auto_blacklist(mysqli $con, string $ip): void {
     $stmt->bind_param('ss', $ip, $reason);
     $stmt->execute();
     $stmt->close();
-    appendLog($con, 'blacklist', "Auto-blacklisted IP: {$ip}", 'web');
+    appendLog($con, 'blacklist', "Auto-blacklisted IP: {$ip}");
 }
 
 // ── Login / logout ────────────────────────────────────────────────────────────
@@ -315,7 +315,7 @@ function auth_login(mysqli $con, string $username, string $password): array {
 
     // Transparent bcrypt cost upgrade to 13.
     if (password_needs_rehash($row['password'], PASSWORD_BCRYPT, ['cost' => 13])) {
-        $newHash = password_hash($password, PASSWORD_BCRYPT, ['cost' => 13]);
+        $newHash = auth_hash_password($password);
         $upd = $con->prepare("UPDATE {$table} SET password = ? WHERE id = ?");
         if ($upd !== false) {
             $upd->bind_param('si', $newHash, $row['id']);
@@ -391,7 +391,7 @@ function _auth_setup_session(mysqli $con, array $row): void
         $upd->close();
     }
 
-    appendLog($con, 'auth', $row['username'] . ' logged in.', 'web');
+    appendLog($con, 'auth', $row['username'] . ' logged in.');
 }
 
 /**
@@ -439,8 +439,18 @@ function auth_totp_complete(mysqli $con, string $code): array
 }
 
 /**
- * Log the user out: write log entry, destroy session, expire sId cookie.
+ * Hash a password using the library's bcrypt cost standard.
+ *
+ * Use for account-creation INSERTs (registration, admin-created accounts) where
+ * there is no existing row yet — auth_change_password() covers the UPDATE path.
+ * The cost constant lives here so consumer code never hardcodes it; see
+ * ~/.claude/rules/auth-rules.md §1.
  */
+function auth_hash_password(string $password): string
+{
+    return password_hash($password, PASSWORD_BCRYPT, ['cost' => 13]);
+}
+
 /**
  * Change a user's password.
  *
@@ -455,23 +465,26 @@ function auth_totp_complete(mysqli $con, string $code): array
  */
 function auth_change_password(mysqli $con, int $userId, string $newPassword): bool
 {
-    $hash  = password_hash($newPassword, PASSWORD_BCRYPT, ['cost' => 13]);
+    $hash  = auth_hash_password($newPassword);
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare("UPDATE {$table} SET password = ?, invalidLogins = 0 WHERE id = ?");
     $stmt->bind_param('si', $hash, $userId);
-    $stmt->execute();
-    $changed = $stmt->affected_rows > 0;
+    // Short-circuit on execute()==false so the read of affected_rows is skipped
+    // when the prepared statement failed — also keeps the function unit-testable
+    // under PHPUnit's mysqli_stmt stubs (which cannot expose internal properties
+    // on PHP 8.5+). See TotpTest for the same pattern.
+    $changed = $stmt->execute() && $stmt->affected_rows > 0;
     $stmt->close();
 
     if ($changed) {
-        appendLog($con, 'npw', "Password changed for user #$userId.", 'web');
+        appendLog($con, 'npw', "Password changed for user #$userId.");
     }
     return $changed;
 }
 
 function auth_logout(mysqli $con): void {
     if (!empty($_SESSION['username'])) {
-        appendLog($con, 'log', $_SESSION['username'] . ' logged out.', 'web');
+        appendLog($con, 'log', $_SESSION['username'] . ' logged out.');
     }
     session_destroy();
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')

@@ -99,7 +99,7 @@ function admin_create_user(
 ): int {
     $table       = AUTH_DB_PREFIX . 'auth_accounts';
     $rights      = in_array($rights, ['Admin', 'User'], true) ? $rights : 'User';
-    $placeholder = password_hash(bin2hex(random_bytes(16)), PASSWORD_BCRYPT, ['cost' => 13]);
+    $placeholder = auth_hash_password(bin2hex(random_bytes(16)));
 
     $stmt = $con->prepare(
         "INSERT INTO {$table} (username, email, password, rights, disabled, activation_code)
@@ -118,7 +118,7 @@ function admin_create_user(
     $link  = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
     $sent  = mail_send_invite($email, $username, $link);
     if (!$sent) {
-        appendLog($con, 'admin', "Failed to send invite email to $email for user #$userId.", 'web');
+        appendLog($con, 'admin', "Failed to send invite email to $email for user #$userId.");
     }
 
     return $userId;
@@ -162,7 +162,7 @@ function admin_edit_user(
         $upd->close();
     }
 
-    appendLog($con, 'admin', "User #$targetId updated." . ($totp_reset ? ' 2FA reset.' : ''), 'web');
+    appendLog($con, 'admin', "User #$targetId updated." . ($totp_reset ? ' 2FA reset.' : ''));
     return $ok;
 }
 
@@ -188,7 +188,7 @@ function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): bool
     $link  = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
     $sent  = mail_send_invite($row['email'], $row['username'], $link);
 
-    appendLog($con, 'admin', "Password reset sent to user #$targetId.", 'web');
+    appendLog($con, 'admin', "Password reset sent to user #$targetId.");
     return $sent;
 }
 
@@ -255,8 +255,7 @@ function admin_delete_user(mysqli $con, int $targetId, int $requestingUserId): b
             appendLog(
                 $con,
                 'admin',
-                "Delete cleanup failed for user #{$targetId}: " . $e->getMessage(),
-                'web'
+                "Delete cleanup failed for user #{$targetId}: " . $e->getMessage()
             );
         }
     }
@@ -272,6 +271,6 @@ function admin_delete_user(mysqli $con, int $targetId, int $requestingUserId): b
     }
     $stmt->close();
 
-    appendLog($con, 'admin', "User #$targetId deleted.", 'web');
+    appendLog($con, 'admin', "User #$targetId deleted.");
     return $ok;
 }

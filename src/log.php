@@ -28,7 +28,7 @@ function addAlert(string $type, string $message): void {
  */
 function appendLog(mysqli $con, string $context, string $activity, string $origin = ''): bool {
     if ($origin === '') {
-        $origin = defined('APP_SLUG') ? APP_SLUG : 'web';
+        $origin = defined('APP_CODE') ? APP_CODE : 'web';
     }
     $table = AUTH_DB_PREFIX . 'auth_log';
     $stmt = $con->prepare(
@@ -67,6 +67,6 @@ function auth_require(): void {
 function logDebug(string $label, string $message): void {
     global $con;
     if ($_SESSION['debug'] ?? false) {
-        appendLog($con, $label, $message, 'web');
+        appendLog($con, $label, $message);
     }
 }
