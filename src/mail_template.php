@@ -44,3 +44,22 @@ function parse_frontmatter(string $raw): array
     $body = implode("\n", array_slice($lines, $i));
     return [$fm, $body];
 }
+
+/**
+ * Replace every {{key}} token with $vars[$key]. Missing key → InvalidArgumentException.
+ * Only recognises `{{identifier}}` with no inner whitespace; literal `{` / `}` in prose
+ * (e.g. `{ not a var }`) is passed through unchanged.
+ */
+function substitute_placeholders(string $tpl, array $vars): string
+{
+    return preg_replace_callback(
+        '/\{\{([a-z_][a-z0-9_]*)\}\}/',
+        function (array $m) use ($vars) {
+            if (!array_key_exists($m[1], $vars)) {
+                throw new \InvalidArgumentException("Missing placeholder: {$m[1]}");
+            }
+            return (string) $vars[$m[1]];
+        },
+        $tpl
+    );
+}
