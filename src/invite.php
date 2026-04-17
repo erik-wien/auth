@@ -59,7 +59,7 @@ function invite_complete(mysqli $con, int $userId, string $password): bool
 {
     $table      = AUTH_DB_PREFIX . 'auth_accounts';
     $tokenTable = AUTH_DB_PREFIX . 'auth_invite_tokens';
-    $hash       = password_hash($password, PASSWORD_BCRYPT, ['cost' => 13]);
+    $hash       = auth_hash_password($password);
 
     $stmt = $con->prepare(
         "UPDATE {$table} SET password = ?, disabled = 0, activation_code = 'activated' WHERE id = ?"

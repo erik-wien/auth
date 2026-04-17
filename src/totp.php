@@ -171,7 +171,7 @@ function auth_totp_disable(mysqli $con, int $userId): void
     try {
         $stmt->execute();
     } catch (\Throwable $e) {
-        appendLog($con, 'totp', 'auth_totp_disable failed for user #' . $userId . ': ' . $e->getMessage(), 'web');
+        appendLog($con, 'totp', 'auth_totp_disable failed for user #' . $userId . ': ' . $e->getMessage());
     }
     $stmt->close();
 }
