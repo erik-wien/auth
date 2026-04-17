@@ -48,4 +48,28 @@ class MailTemplateTest extends TestCase
         $out = \Erikr\Auth\Mail\substitute_placeholders('{ not } a {{var}}', ['var' => 'X']);
         $this->assertSame('{ not } a X', $out);
     }
+
+    public function test_markdown_to_html_paragraphs(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_html("One.\n\nTwo.\n\nThree.");
+        $this->assertSame("<p>One.</p>\n<p>Two.</p>\n<p>Three.</p>", $out);
+    }
+
+    public function test_markdown_to_html_renders_inline_link(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_html('Click [here](https://example.com/x).');
+        $this->assertSame('<p>Click <a href="https://example.com/x">here</a>.</p>', $out);
+    }
+
+    public function test_markdown_to_html_escapes_user_data(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_html('Hello <script>alert(1)</script>.');
+        $this->assertSame('<p>Hello &lt;script&gt;alert(1)&lt;/script&gt;.</p>', $out);
+    }
+
+    public function test_markdown_to_html_escapes_ampersand_in_href(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_html('[link](https://example.com/?a=1&b=2)');
+        $this->assertSame('<p><a href="https://example.com/?a=1&amp;b=2">link</a></p>', $out);
+    }
 }
