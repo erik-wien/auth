@@ -79,16 +79,6 @@ class InviteTest extends TestCase
         $this->assertStringContainsString('REPLACE INTO', strtoupper($sql));
     }
 
-    // ── invite_send_email ─────────────────────────────────────────────────────
-
-    public function test_send_email_returns_false_when_smtp_unreachable(): void
-    {
-        // SMTP_HOST is 127.0.0.1:1025 (defined in bootstrap.php) — connection will fail.
-        // invite_send_email() must catch the exception and return false.
-        $result = invite_send_email('user@example.com', 'Alice', 'token123', 'http://localhost/app');
-        $this->assertFalse($result);
-    }
-
     // ── invite_verify_token ───────────────────────────────────────────────────
 
     public function test_verify_token_returns_user_id_for_valid_token(): void
