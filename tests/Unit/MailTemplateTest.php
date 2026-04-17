@@ -72,4 +72,34 @@ class MailTemplateTest extends TestCase
         $out = \Erikr\Auth\Mail\markdown_to_html('[link](https://example.com/?a=1&b=2)');
         $this->assertSame('<p><a href="https://example.com/?a=1&amp;b=2">link</a></p>', $out);
     }
+
+    public function test_markdown_to_text_keeps_paragraphs(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_text("One.\n\nTwo.\n\nThree.");
+        $this->assertSame("One.\n\nTwo.\n\nThree.", $out);
+    }
+
+    public function test_markdown_to_text_renders_link_with_distinct_text(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_text('Click [here](https://example.com/x).');
+        $this->assertSame('Click here: https://example.com/x.', $out);
+    }
+
+    public function test_markdown_to_text_collapses_link_with_same_text_and_url(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_text('[https://example.com](https://example.com)');
+        $this->assertSame('https://example.com', $out);
+    }
+
+    public function test_markdown_to_text_collapses_mailto_equal_to_visible(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_text('Schreiben an [foo@example.com](mailto:foo@example.com).');
+        $this->assertSame('Schreiben an foo@example.com.', $out);
+    }
+
+    public function test_markdown_to_text_keeps_mailto_when_visible_differs(): void
+    {
+        $out = \Erikr\Auth\Mail\markdown_to_text('Schreiben an [unser Support](mailto:foo@example.com).');
+        $this->assertSame('Schreiben an unser Support: mailto:foo@example.com.', $out);
+    }
 }
