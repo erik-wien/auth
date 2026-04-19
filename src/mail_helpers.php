@@ -69,9 +69,9 @@ function mail_send_admin_notice(mysqli $con, string $template, array $vars): int
     if ($result === false) { $stmt->close(); return 0; }
 
     $allVars = array_merge([
-        'app_name'      => defined('APP_NAME')         ? APP_NAME         : '',
-        'app_url'       => defined('APP_BASE_URL')      ? APP_BASE_URL     : '',
-        'support_email' => defined('APP_SUPPORT_EMAIL') ? APP_SUPPORT_EMAIL : '',
+        'app_name'      => APP_NAME,
+        'app_url'       => APP_BASE_URL,
+        'support_email' => APP_SUPPORT_EMAIL,
     ], $vars);
 
     $sent = 0;
