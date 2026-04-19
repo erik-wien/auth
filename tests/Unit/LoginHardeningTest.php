@@ -131,10 +131,22 @@ class LoginHardeningTest extends TestCase
         $genericStmt->method('get_result')->willReturn($genericResult);
         $genericStmt->method('close')->willReturn(true);
 
+        // Empty result for admin-notice queries (rights = 'Admin') so that
+        // mail_send_admin_notice() finds no recipients and never attempts SMTP.
+        $noAdminsResult = $this->createStub(\mysqli_result::class);
+        $noAdminsResult->method('fetch_assoc')->willReturn(null);
+        $adminListStmt = $this->createStub(\mysqli_stmt::class);
+        $adminListStmt->method('bind_param')->willReturn(true);
+        $adminListStmt->method('execute')->willReturn(true);
+        $adminListStmt->method('get_result')->willReturn($noAdminsResult);
+        $adminListStmt->method('close')->willReturn(true);
+
         $con = $this->createStub(\mysqli::class);
         $con->method('prepare')->willReturnCallback(
-            function (string $sql) use ($blStmt, $userStmt, $genericStmt): \mysqli_stmt {
+            function (string $sql) use ($blStmt, $userStmt, $adminListStmt, $genericStmt): \mysqli_stmt {
                 if (stripos($sql, 'auth_blacklist') !== false) return $blStmt;
+                // Admin-notice query: SELECT ... WHERE rights = 'Admin' — must return empty.
+                if (stripos($sql, "rights") !== false && stripos($sql, "'Admin'") !== false) return $adminListStmt;
                 if (stripos($sql, 'auth_accounts')  !== false) return $userStmt;
                 return $genericStmt;
             }
@@ -184,5 +196,42 @@ class LoginHardeningTest extends TestCase
         $result = auth_login($this->loginCon($this->activeRow(9)), 'alice', 'wrong');
         $this->assertFalse($result['ok']);
         $this->assertStringNotContainsString('gesperrt', $result['error']);
+    }
+
+    // ── mail_send_admin_notice ────────────────────────────────────────────────
+
+    public function test_admin_notice_queries_active_admins(): void
+    {
+        $sqls = [];
+
+        $noAdminsResult = $this->createStub(\mysqli_result::class);
+        $noAdminsResult->method('fetch_assoc')->willReturn(null);
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')->willReturn(true);
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('get_result')->willReturn($noAdminsResult);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')->willReturnCallback(function (string $s) use (&$sqls, $stmt) {
+            $sqls[] = $s;
+            return $stmt;
+        });
+
+        $sent = mail_send_admin_notice($con, 'user_lockout_notice', [
+            'username'  => 'alice',
+            'email'     => 'alice@example.com',
+            'threshold' => '10',
+            'last_ip'   => '10.0.0.1',
+            'admin_url' => 'http://localhost/app/admin.php#users',
+        ]);
+
+        $this->assertSame(0, $sent);
+        $this->assertGreaterThan(0, count($sqls));
+        $this->assertMatchesRegularExpression(
+            "/rights\s*=\s*'Admin'/i",
+            implode(' ', $sqls)
+        );
     }
 }
