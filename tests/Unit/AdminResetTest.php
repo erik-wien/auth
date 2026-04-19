@@ -42,11 +42,27 @@ class AdminResetTest extends TestCase
         $logStmt->method('get_result')->willReturn($logResult);
         $logStmt->method('close')->willReturn(true);
 
-        // auth_blacklist auto=1 check → returns [1] if ip is in $autoIps
-        $blStmt = $this->createStub(\mysqli_stmt::class);
-        $blStmt->method('bind_param')->willReturn(true);
-        $blStmt->method('execute')->willReturn(true);
-        $blStmt->method('close')->willReturn(true);
+        // auth_blacklist auto=1 SELECT — one stub per IP, returns [1] only for IPs in $autoIps
+        $blStmts = [];
+        foreach ($failedIps as $ip) {
+            $inAuto   = in_array($ip, $autoIps, true);
+            $blResult = $this->createStub(\mysqli_result::class);
+            $blResult->method('fetch_row')->willReturn($inAuto ? [1] : null);
+            $blInner  = $this->createStub(\mysqli_stmt::class);
+            $blInner->method('bind_param')->willReturn(true);
+            $blInner->method('execute')->willReturn(true);
+            $blInner->method('get_result')->willReturn($blResult);
+            $blInner->method('close')->willReturn(true);
+            $blStmts[] = $blInner;
+        }
+        // Fallback blacklist stub (used when $failedIps is empty)
+        $blFallbackResult = $this->createStub(\mysqli_result::class);
+        $blFallbackResult->method('fetch_row')->willReturn(null);
+        $blFallback = $this->createStub(\mysqli_stmt::class);
+        $blFallback->method('bind_param')->willReturn(true);
+        $blFallback->method('execute')->willReturn(true);
+        $blFallback->method('get_result')->willReturn($blFallbackResult);
+        $blFallback->method('close')->willReturn(true);
 
         // Generic stmt for UPDATE/DELETE/INSERT/appendLog
         $genericResult = $this->createStub(\mysqli_result::class);
@@ -58,13 +74,14 @@ class AdminResetTest extends TestCase
         $genericStmt->method('get_result')->willReturn($genericResult);
         $genericStmt->method('close')->willReturn(true);
 
+        $blCallIdx = 0;
         $con = $this->createStub(\mysqli::class);
         $con->method('prepare')->willReturnCallback(
-            function (string $sql) use ($userStmt, $logStmt, $genericStmt, $blStmt, $autoIps): \mysqli_stmt {
-                if (stripos($sql, 'auth_accounts') !== false)        return $userStmt;
-                if (stripos($sql, 'DISTINCT') !== false)             return $logStmt;
+            function (string $sql) use ($userStmt, $logStmt, $genericStmt, $blStmts, $blFallback, &$blCallIdx): \mysqli_stmt {
+                if (stripos($sql, 'auth_accounts') !== false)   return $userStmt;
+                if (stripos($sql, 'DISTINCT') !== false)         return $logStmt;
                 if (stripos($sql, 'auth_blacklist') !== false
-                    && stripos($sql, 'SELECT') !== false)            return $blStmt;
+                    && stripos($sql, 'SELECT') !== false)        return $blStmts[$blCallIdx++] ?? $blFallback;
                 return $genericStmt;
             }
         );
@@ -137,5 +154,17 @@ class AdminResetTest extends TestCase
         $this->assertSame('alice', $result['username']);
         $this->assertSame('alice@example.com', $result['email']);
         $this->assertIsArray($result['ips']);
+    }
+
+    public function test_preview_returns_only_auto_blacklisted_ips(): void
+    {
+        $con = $this->resetCon(
+            ['username' => 'alice', 'email' => 'alice@example.com'],
+            ['10.0.0.1', '10.0.0.2'],  // both appear in log
+            ['10.0.0.1']               // only first is auto-blacklisted
+        );
+        $result = admin_user_reset_preview($con, 1);
+        $this->assertTrue($result['ok']);
+        $this->assertSame(['10.0.0.1'], $result['ips']);
     }
 }

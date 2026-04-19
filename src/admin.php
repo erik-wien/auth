@@ -293,7 +293,10 @@ function _admin_preview_ips_for_user(mysqli $con, string $username): array
     $autoListed = [];
     foreach ($failedIps as $ip) {
         $sel = $con->prepare(
-            "SELECT 1 FROM {$blTable} WHERE ip = ? AND auto = 1 LIMIT 1"
+            "SELECT 1 FROM {$blTable}
+             WHERE ip = ? AND auto = 1
+               AND (expires_at IS NULL OR expires_at > NOW())
+             LIMIT 1"
         );
         if ($sel === false) continue;
         $sel->bind_param('s', $ip);
