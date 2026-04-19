@@ -50,7 +50,7 @@ composer install
 ```php
 require 'vendor/autoload.php';
 
-define('AUTH_DB_PREFIX', 'jardyx_auth.');   // or '' if connected directly
+define('AUTH_DB_PREFIX', 'auth.');   // or '' if connected directly
 define('APP_CODE', 'myapp');                 // used by appendLog() as origin
 
 $con = new mysqli($host, $user, $pass, $db);
@@ -88,7 +88,7 @@ Full reference lives in `docs/conventions.md`. The high-traffic entry points:
 
 Two deployment shapes are supported:
 
-- **Shared auth DB** (`jardyx_auth` locally / on akadbrain, `5279249db19` on world4you): every app connects to its own DB for app data and prefixes auth queries with `AUTH_DB_PREFIX = 'jardyx_auth.'`.
+- **Shared auth DB** (`auth` locally / on akadbrain, `5279249db19` on world4you): every app connects to its own DB for app data and prefixes auth queries with `AUTH_DB_PREFIX = 'auth.'`.
 - **Direct connection:** `AUTH_DB_PREFIX = ''` when the app connects directly to the auth DB.
 
 Tables:
@@ -105,7 +105,7 @@ Tables:
 Migrations live in `db/NN_*.sql`, applied manually in order:
 
 ```bash
-mysql -u root jardyx_auth < db/01_rename_tables.sql
+mysql -u root auth < db/01_rename_tables.sql
 # …continue through 10_remember_tokens.sql
 ```
 
@@ -118,7 +118,7 @@ composer install
 vendor/bin/phpunit
 ```
 
-PHPUnit 13. Unit tests (`tests/Unit/`) use mocks and need no DB. Integration fixtures live in `tests/fixtures/`. Integration tests target a real `jardyx_auth` DB and wrap each test in a transaction.
+PHPUnit 13. Unit tests (`tests/Unit/`) use mocks and need no DB. Integration fixtures live in `tests/fixtures/`. Integration tests target a real `auth` DB and wrap each test in a transaction.
 
 ## Email templates
 
@@ -136,4 +136,4 @@ Full contract: [`docs/conventions.md`](docs/conventions.md).
 ## Related repositories
 
 - [`erikr/chrome`](https://github.com/erik-wien/chrome) — shared UI shell (header / footer / admin tabs) built on top of this library.
-- [`erikr/css`](https://github.com/erik-wien/css) — shared CSS foundation; the design rules chrome implements live in `css/docs/design-rules.md`.
+- `~/Git/css_library` — shared CSS foundation; the design rules chrome implements live in `css_library/docs/design-rules.md`.

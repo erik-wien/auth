@@ -1,7 +1,7 @@
 -- db/05_invite_tokens.sql
--- Run against jardyx_auth before deploying.
+-- Run against auth before deploying.
 
-USE jardyx_auth;
+USE auth;
 
 CREATE TABLE auth_invite_tokens (
   id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

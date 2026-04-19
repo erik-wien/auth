@@ -12,7 +12,7 @@ class TotpAuthTest extends TestCase
             'id'              => 1,
             'username'        => 'alice',
             'password'        => password_hash('secret', PASSWORD_BCRYPT, ['cost' => 4]),
-            'email'           => 'alice@example.com',
+            'email'           => 'test@jardyx.com',
             'has_avatar'      => 0,
             'activation_code' => 'activated',
             'disabled'        => 0,

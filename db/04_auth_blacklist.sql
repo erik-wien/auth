@@ -1,8 +1,8 @@
 -- 04_auth_blacklist.sql
--- Run against the jardyx_auth database.
+-- Run against the auth database.
 -- Creates auth_blacklist for both manual and automatic IP blocking.
 
-USE jardyx_auth;
+USE auth;
 
 CREATE TABLE auth_blacklist (
     id         INT UNSIGNED  NOT NULL AUTO_INCREMENT PRIMARY KEY,

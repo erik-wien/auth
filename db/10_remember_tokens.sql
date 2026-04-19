@@ -1,5 +1,5 @@
 -- db/10_remember_tokens.sql
--- Run against jardyx_auth.
+-- Run against auth.
 -- Adds the remember-me token table for "Keep me logged in" (8-day persistent sessions).
 --
 -- Token format: cookie value is "<selector>.<validator>" where:
@@ -14,7 +14,7 @@
 -- Cleanup: CASCADE on auth_accounts deletion; expired rows are garbage-collected
 -- opportunistically by auth_remember_validate() on each request.
 
-USE jardyx_auth;
+USE auth;
 
 CREATE TABLE IF NOT EXISTS auth_remember_tokens (
   id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

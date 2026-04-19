@@ -1,5 +1,5 @@
 -- 08_orphan_cascades.sql
--- Run against jardyx_auth.
+-- Run against auth.
 --
 -- Retrofit ON DELETE CASCADE on same-DB tables that reference auth_accounts.id
 -- but were created without a foreign-key constraint. Without this, deleting a
@@ -11,7 +11,7 @@
 -- handled via application-level cleanup hooks in the auth library, not FKs,
 -- to avoid coupling cross-database REFERENCES privileges.
 
-USE jardyx_auth;
+USE auth;
 
 -- password_resets: retain user_id but cascade on delete.
 ALTER TABLE password_resets

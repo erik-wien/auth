@@ -1,8 +1,8 @@
 -- db/06_totp.sql
--- Run against the jardyx_auth database.
+-- Run against the auth database.
 -- Adds TOTP secret column for two-factor authentication.
 
-USE jardyx_auth;
+USE auth;
 
 ALTER TABLE auth_accounts
   ADD COLUMN totp_secret VARCHAR(64) NULL DEFAULT NULL

@@ -1,5 +1,5 @@
 -- 09_avatar_simplify.sql
--- Run against jardyx_auth.
+-- Run against auth.
 --
 -- Shrinks auth_accounts avatar storage to a single column. Pre-conversion the
 -- table carried four fields for one concept (img filename, img_type MIME,
@@ -16,7 +16,7 @@
 -- To re-run after a failure, check which columns still exist via
 -- `DESCRIBE auth_accounts;` and drop only the remaining ones.
 
-USE jardyx_auth;
+USE auth;
 
 UPDATE auth_accounts SET img_blob = NULL;
 

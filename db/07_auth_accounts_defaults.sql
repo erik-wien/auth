@@ -1,12 +1,12 @@
 -- db/07_auth_accounts_defaults.sql
--- Run against the jardyx_auth database.
+-- Run against the auth database.
 -- admin_create_user() (src/admin.php) only inserts username, email, password,
 -- rights, disabled, activation_code. Legacy NOT NULL columns inherited from the
 -- original schema then fail the INSERT with "Field 'uuid' doesn't have a default
 -- value". This migration gives the legacy columns safe defaults so the modern
 -- admin_create_user() works without touching them.
 
-USE jardyx_auth;
+USE auth;
 
 ALTER TABLE auth_accounts
   MODIFY uuid      CHAR(36)     NOT NULL DEFAULT (UUID()),

@@ -253,6 +253,141 @@ function auth_remember_revoke_all(mysqli $con): bool
     return true;
 }
 
+/**
+ * Return all active remember-me token rows for a user, ordered most-recent first.
+ * Each row carries: selector, created_at, expires_at, user_agent (raw, truncated
+ * at 255 by the schema), ip (raw), browser_os (parsed UA), is_current (whether
+ * this row matches the request's cookie selector).
+ *
+ * Only non-expired rows are returned; the caller is safe to render the list
+ * without re-checking expires_at for visibility. Does not touch the DB beyond
+ * the SELECT.
+ */
+function auth_remember_list_for_user(mysqli $con, int $userId): array
+{
+    if ($userId <= 0) return [];
+
+    $table = AUTH_DB_PREFIX . 'auth_remember_tokens';
+    $stmt  = $con->prepare(
+        "SELECT selector, created_at, expires_at, user_agent, ip
+         FROM {$table}
+         WHERE user_id = ? AND expires_at > NOW()
+         ORDER BY created_at DESC"
+    );
+    if ($stmt === false) return [];
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $currentSelector = '';
+    $cookie = $_COOKIE[AUTH_REMEMBER_COOKIE] ?? '';
+    if ($cookie !== '' && strpos($cookie, '.') !== false) {
+        [$candidate] = explode('.', $cookie, 2);
+        if (preg_match('/^[a-f0-9]{16}$/', $candidate)) {
+            $currentSelector = $candidate;
+        }
+    }
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $rows[] = [
+            'selector'   => (string) $row['selector'],
+            'created_at' => (string) $row['created_at'],
+            'expires_at' => (string) $row['expires_at'],
+            'user_agent' => (string) ($row['user_agent'] ?? ''),
+            'ip'         => (string) ($row['ip'] ?? ''),
+            'browser_os' => auth_remember_parse_ua((string) ($row['user_agent'] ?? '')),
+            'is_current' => $currentSelector !== '' && $currentSelector === (string) $row['selector'],
+        ];
+    }
+    $stmt->close();
+    return $rows;
+}
+
+/**
+ * Revoke a single remember-me token by selector. Requires $userId to match the
+ * token's owner — the selector is client-supplied, so the WHERE clause binds
+ * both user_id and selector to prevent IDOR. Returns true iff a row was
+ * deleted. Logs an audit entry with context 'sec' on success.
+ *
+ * If the deleted token matches the caller's current cookie, the request cookie
+ * is cleared so the browser stops sending the (now invalid) selector.
+ */
+function auth_remember_revoke_one(mysqli $con, int $userId, string $selector): bool
+{
+    if ($userId <= 0) return false;
+    if (!preg_match('/^[a-f0-9]{16}$/', $selector)) return false;
+
+    $table = AUTH_DB_PREFIX . 'auth_remember_tokens';
+    $stmt  = $con->prepare("DELETE FROM {$table} WHERE user_id = ? AND selector = ?");
+    if ($stmt === false) return false;
+    $stmt->bind_param('is', $userId, $selector);
+    // Short-circuit on execute()==false; matches the pattern used in
+    // auth_change_password() so PHPUnit stubs don't need to mock affected_rows.
+    $deleted = $stmt->execute() && $stmt->affected_rows > 0;
+    $stmt->close();
+    if (!$deleted) return false;
+
+    $cookie = $_COOKIE[AUTH_REMEMBER_COOKIE] ?? '';
+    if ($cookie !== '' && strpos($cookie, '.') !== false) {
+        [$cookieSelector] = explode('.', $cookie, 2);
+        if ($cookieSelector === $selector) {
+            _auth_remember_setcookie('', time() - 3600);
+        }
+    }
+
+    appendLog($con, 'sec', 'Revoked remember-me token ' . $selector . '.');
+    return true;
+}
+
+/**
+ * Best-effort User-Agent parser: returns a short "Browser on OS" string for
+ * display, falling back to a truncated raw UA when nothing matches. Plain
+ * string matching — deliberately no external library — covers the common
+ * desktop/mobile combinations; anything exotic lands in the fallback branch.
+ */
+function auth_remember_parse_ua(string $ua): string
+{
+    if ($ua === '') return 'Unbekannt';
+
+    $os = 'Unbekannt';
+    if (stripos($ua, 'iPhone') !== false || stripos($ua, 'iPad') !== false || stripos($ua, 'iOS') !== false) {
+        $os = 'iOS';
+    } elseif (stripos($ua, 'Android') !== false) {
+        $os = 'Android';
+    } elseif (stripos($ua, 'Mac OS X') !== false || stripos($ua, 'Macintosh') !== false) {
+        $os = 'macOS';
+    } elseif (stripos($ua, 'Windows') !== false) {
+        $os = 'Windows';
+    } elseif (stripos($ua, 'Linux') !== false) {
+        $os = 'Linux';
+    }
+
+    $browser = '';
+    if (stripos($ua, 'Edg/') !== false || stripos($ua, 'Edge/') !== false) {
+        $browser = 'Edge';
+    } elseif (stripos($ua, 'Firefox/') !== false) {
+        $browser = 'Firefox';
+    } elseif (stripos($ua, 'Chrome/') !== false && stripos($ua, 'Chromium') === false) {
+        $browser = 'Chrome';
+    } elseif (stripos($ua, 'Chromium/') !== false) {
+        $browser = 'Chromium';
+    } elseif (stripos($ua, 'Safari/') !== false && stripos($ua, 'Chrome') === false) {
+        $browser = 'Safari';
+    }
+
+    if ($browser !== '' && $os !== 'Unbekannt') {
+        return $browser . ' auf ' . $os;
+    }
+    if ($browser !== '') {
+        return $browser;
+    }
+    if ($os !== 'Unbekannt') {
+        return $os;
+    }
+    return mb_strlen($ua) > 60 ? mb_substr($ua, 0, 60) . '…' : $ua;
+}
+
 /** @internal */
 function _auth_remember_delete_row(mysqli $con, int $rowId): void
 {

@@ -5,7 +5,7 @@
  * Sending the invite email lives in src/mail_helpers.php (`mail_send_invite`).
  *
  * Requires:
- *  - AUTH_DB_PREFIX constant  (e.g. 'jardyx_auth.' or '')
+ *  - AUTH_DB_PREFIX constant  (e.g. 'auth.' or '')
  *  - appendLog() from src/log.php
  */
 
@@ -62,7 +62,7 @@ function invite_complete(mysqli $con, int $userId, string $password): bool
     $hash       = auth_hash_password($password);
 
     $stmt = $con->prepare(
-        "UPDATE {$table} SET password = ?, disabled = 0, activation_code = 'activated' WHERE id = ?"
+        "UPDATE {$table} SET password = ?, disabled = '0', activation_code = 'activated' WHERE id = ?"
     );
     $stmt->bind_param('si', $hash, $userId);
     $stmt->execute();
