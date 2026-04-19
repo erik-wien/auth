@@ -34,6 +34,88 @@ function auth_compute_progressive_delay(int $failCount): int
     return min(30, (int) (2 ** $exp));
 }
 
+/**
+ * Count failed login attempts from $ip within the RATE_LIMIT_WINDOW (seconds).
+ * Queries auth_log for entries matching 'Login failed%' from this IP.
+ */
+function auth_count_recent_ip_fails(mysqli $con, string $ip): int
+{
+    $table = AUTH_DB_PREFIX . 'auth_log';
+    $stmt  = $con->prepare(
+        "SELECT COUNT(*) FROM {$table}
+         WHERE ipAdress = INET_ATON(?)
+           AND context = 'login'
+           AND activity LIKE 'Login failed%'
+           AND logTime >= DATE_SUB(NOW(), INTERVAL " . RATE_LIMIT_WINDOW . " SECOND)"
+    );
+    if ($stmt === false) return 0;
+    $stmt->bind_param('s', $ip);
+    $stmt->execute();
+    $count = 0;
+    $stmt->bind_result($count);
+    $stmt->fetch();
+    $stmt->close();
+    return (int) $count;
+}
+
+/**
+ * Compute a shenanigans score for an IP based on its auth_log activity in the
+ * last 60 minutes. Also returns unique usernames seen in failed attempts.
+ *
+ * Score mapping:
+ *  - 'Login failed for unknown user: …' → +LOGIN_SCORE_FAIL_UNKNOWN_USER (3)
+ *  - 'Login failed for …'               → +LOGIN_SCORE_FAIL_EXISTING_USER (1)
+ *  - 'Rate limit triggered…'            → +LOGIN_SCORE_RL_STRIKE (5)
+ *
+ * @return array{score: int, usernames: list<string>}
+ */
+function auth_compute_ip_score(mysqli $con, string $ip): array
+{
+    $table = AUTH_DB_PREFIX . 'auth_log';
+    $stmt  = $con->prepare(
+        "SELECT activity FROM {$table}
+         WHERE ipAdress = INET_ATON(?)
+           AND context = 'login'
+           AND logTime >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)"
+    );
+    if ($stmt === false) return ['score' => 0, 'usernames' => []];
+    $stmt->bind_param('s', $ip);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($result === false) { $stmt->close(); return ['score' => 0, 'usernames' => []]; }
+
+    $score     = 0;
+    $usernames = [];
+    $prefix_unknown  = 'Login failed for unknown user: ';
+    $prefix_existing = 'Login failed for ';
+    while ($row = $result->fetch_row()) {
+        $activity = (string) ($row[0] ?? '');
+        if (str_starts_with($activity, $prefix_unknown)) {
+            $score      += LOGIN_SCORE_FAIL_UNKNOWN_USER;
+            $username    = rtrim(substr($activity, strlen($prefix_unknown)), '.');
+            if ($username !== '') $usernames[] = $username;
+        } elseif (str_starts_with($activity, $prefix_existing)) {
+            $score      += LOGIN_SCORE_FAIL_EXISTING_USER;
+            $username    = rtrim(substr($activity, strlen($prefix_existing)), '.');
+            if ($username !== '') $usernames[] = $username;
+        } elseif (str_starts_with($activity, 'Rate limit triggered')) {
+            $score += LOGIN_SCORE_RL_STRIKE;
+        }
+    }
+    $stmt->close();
+    return ['score' => $score, 'usernames' => array_values(array_unique($usernames))];
+}
+
+/**
+ * Compute the progressive delay for the current IP and sleep if > 0.
+ */
+function auth_apply_progressive_delay(mysqli $con, string $ip): void
+{
+    $count = auth_count_recent_ip_fails($con, $ip);
+    $delay = auth_compute_progressive_delay($count);
+    if ($delay > 0) sleep($delay);
+}
+
 // ── General-purpose rate limiter ──────────────────────────────────────────────
 
 /**
@@ -246,13 +328,26 @@ function auth_unblacklist_ip(mysqli $con, string $ip): void {
 }
 
 /**
- * Auto-blacklist an IP after it has triggered the rate limit BLACKLIST_AUTO_STRIKES times.
- * Uses INSERT IGNORE — does not override an existing manual entry.
+ * Auto-blacklist an IP using INSERT IGNORE (does not override a manual entry).
+ *
+ * When $notifyAdmins is true, sends a blacklist_notice email to all active admins.
+ * Only pass $notifyAdmins = true from score-triggered paths.
+ *
+ * @param array{score: int, usernames: list<string>} $scoreContext
  */
-function auth_auto_blacklist(mysqli $con, string $ip): void {
+function auth_auto_blacklist(
+    mysqli $con,
+    string $ip,
+    bool   $notifyAdmins = false,
+    array  $scoreContext = []
+): void {
     $table  = AUTH_DB_PREFIX . 'auth_blacklist';
-    $reason = 'Auto-blacklisted: rate limit triggered ' . BLACKLIST_AUTO_STRIKES . ' times';
-    $stmt   = $con->prepare(
+    $score  = (int) ($scoreContext['score'] ?? 0);
+    $reason = $score > 0
+        ? "Auto-blacklisted: shenanigans score {$score}"
+        : 'Auto-blacklisted: rate limit triggered ' . BLACKLIST_AUTO_STRIKES . ' times';
+
+    $stmt = $con->prepare(
         "INSERT IGNORE INTO {$table} (ip, reason, auto) VALUES (?, ?, 1)"
     );
     if ($stmt === false) return;
@@ -260,6 +355,19 @@ function auth_auto_blacklist(mysqli $con, string $ip): void {
     $stmt->execute();
     $stmt->close();
     appendLog($con, 'blacklist', "Auto-blacklisted IP: {$ip}");
+
+    if ($notifyAdmins && function_exists('mail_send_admin_notice')) {
+        $usernames = implode(', ', $scoreContext['usernames'] ?? []) ?: '—';
+        mail_send_admin_notice($con, 'blacklist_notice', [
+            'ip'        => $ip,
+            'reason'    => $reason,
+            'score'     => (string) $score,
+            'usernames' => $usernames,
+            'admin_url' => defined('APP_BASE_URL')
+                ? rtrim(APP_BASE_URL, '/') . '/admin.php#log'
+                : '#',
+        ]);
+    }
 }
 
 // ── Login / logout ────────────────────────────────────────────────────────────
@@ -269,35 +377,41 @@ function auth_auto_blacklist(mysqli $con, string $ip): void {
  *
  * Steps:
  *  1. Blacklist check — immediate rejection for blocked IPs.
- *  2. Rate-limit check — blocks after RATE_LIMIT_MAX failures in RATE_LIMIT_WINDOW seconds.
- *     Each rate-limit hit records a strike; BLACKLIST_AUTO_STRIKES hits triggers auto-blacklist.
+ *  2. Rate-limit check — logs the event (scorable as +5) then evaluates score.
  *  3. User lookup — generic error to prevent username enumeration.
  *  4. Activation check (activation_code must equal 'activated').
  *  5. Disabled check.
- *  6. Password verify (bcrypt via password_verify).
- *  7. Transparent bcrypt-13 rehash on successful login.
- *  8. Session fixation prevention (session_regenerate_id).
- *  9. Theme cookie sync.
+ *  6. Per-user lockout gate (invalidLogins >= USER_LOCKOUT_THRESHOLD).
+ *  7. Password verify (bcrypt via password_verify).
+ *  8. Transparent bcrypt-13 rehash on successful login.
+ *  9. Session fixation prevention (session_regenerate_id).
+ * 10. Theme cookie sync.
  *
  * @return array ['ok' => true, 'username' => string]
  *            or ['ok' => false, 'error' => string]
+ *            or ['ok' => true, 'totp_required' => true]
  */
 function auth_login(mysqli $con, string $username, string $password, bool $remember = false): array {
     $ip    = getUserIpAddr();
     $table = AUTH_DB_PREFIX . 'auth_accounts';
 
+    // Step 1: blacklist — immediate rejection, no delay.
     if (auth_is_blacklisted($con, $ip)) {
         return ['ok' => false, 'error' => 'Ihre IP-Adresse wurde gesperrt.'];
     }
 
+    // Step 2: rate-limit — log the event (scorable as +5) then check score.
     if (auth_is_rate_limited($ip)) {
-        $strikes = auth_record_rl_strike($ip);
-        if ($strikes >= BLACKLIST_AUTO_STRIKES) {
-            auth_auto_blacklist($con, $ip);
+        appendLog($con, 'login', 'Rate limit triggered.');
+        $scored = auth_compute_ip_score($con, $ip);
+        if ($scored['score'] >= LOGIN_SCORE_BLACKLIST_THRESHOLD) {
+            auth_auto_blacklist($con, $ip, true, $scored);
         }
+        auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten.'];
     }
 
+    // Step 3: user lookup.
     $stmt = $con->prepare(
         "SELECT id, username, password, email,
                 (img_blob IS NOT NULL) AS has_avatar,
@@ -314,16 +428,33 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
     $stmt->close();
 
     if ($row === null) {
+        appendLog($con, 'login', "Login failed for unknown user: {$username}.");
         auth_record_failure($ip);
+        $scored = auth_compute_ip_score($con, $ip);
+        if ($scored['score'] >= LOGIN_SCORE_BLACKLIST_THRESHOLD) {
+            auth_auto_blacklist($con, $ip, true, $scored);
+        }
+        auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Benutzername und Kennwort stimmen nicht überein.'];
     }
 
     if ($row['activation_code'] !== 'activated') {
+        auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Benutzer ist noch nicht aktiviert.'];
     }
     if ((int) $row['disabled'] === 1) {
+        auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Benutzer ist gesperrt.'];
     }
+
+    // Step 4: per-user lockout gate (before bcrypt — no expensive hash needed).
+    if ((int) $row['invalidLogins'] >= USER_LOCKOUT_THRESHOLD) {
+        appendLog($con, 'login', "Login rejected: account locked ({$username}).");
+        auth_apply_progressive_delay($con, $ip);
+        return ['ok' => false, 'error' => 'Konto gesperrt. Bitte wenden Sie sich an einen Administrator.'];
+    }
+
+    // Step 5: password verify.
     if (!password_verify($password, $row['password'])) {
         auth_record_failure($ip);
         $upd = $con->prepare("UPDATE {$table} SET invalidLogins = invalidLogins + 1 WHERE username = ?");
@@ -332,13 +463,37 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
             $upd->execute();
             $upd->close();
         }
+
+        // Notify admins once when crossing the lockout threshold.
+        $newInvalidLogins = (int) $row['invalidLogins'] + 1;
+        if ($newInvalidLogins === USER_LOCKOUT_THRESHOLD) {
+            appendLog($con, 'login', "Account locked: {$username} reached lockout threshold.");
+            if (function_exists('mail_send_admin_notice')) {
+                mail_send_admin_notice($con, 'user_lockout_notice', [
+                    'username'  => $username,
+                    'email'     => $row['email'],
+                    'threshold' => (string) USER_LOCKOUT_THRESHOLD,
+                    'last_ip'   => $ip,
+                    'admin_url' => defined('APP_BASE_URL')
+                        ? rtrim(APP_BASE_URL, '/') . '/admin.php#users'
+                        : '#',
+                ]);
+            }
+        }
+
+        appendLog($con, 'login', "Login failed for {$username}.");
+        $scored = auth_compute_ip_score($con, $ip);
+        if ($scored['score'] >= LOGIN_SCORE_BLACKLIST_THRESHOLD) {
+            auth_auto_blacklist($con, $ip, true, $scored);
+        }
+        auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Benutzername und Kennwort stimmen nicht überein.'];
     }
 
     // Transparent bcrypt cost upgrade to 13.
     if (password_needs_rehash($row['password'], PASSWORD_BCRYPT, ['cost' => 13])) {
         $newHash = auth_hash_password($password);
-        $upd = $con->prepare("UPDATE {$table} SET password = ? WHERE id = ?");
+        $upd     = $con->prepare("UPDATE {$table} SET password = ? WHERE id = ?");
         if ($upd !== false) {
             $upd->bind_param('si', $newHash, $row['id']);
             $upd->execute();
@@ -347,9 +502,8 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
     }
 
     auth_clear_failures($ip);
-    auth_clear_rl_strikes($ip);
 
-    // TOTP branch — if user has 2FA enabled, defer session setup.
+    // TOTP branch.
     $totpSecret = $row['totp_secret'] ?? null;
     if ($totpSecret !== null) {
         $_SESSION['auth_totp_pending'] = [
