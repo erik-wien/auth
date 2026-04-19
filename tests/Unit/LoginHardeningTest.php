@@ -142,13 +142,18 @@ class LoginHardeningTest extends TestCase
         return $con;
     }
 
+    // Pre-computed bcrypt cost-13 hash of the string 'correct'.
+    // Generated once via: php -r "echo password_hash('correct', PASSWORD_BCRYPT, ['cost'=>13]);"
+    // Avoids running a slow bcrypt-13 hash at fixture-creation time in every test run.
+    private const BCRYPT_CORRECT = '$2y$13$LeY.W9y8msB0bpqlPc/55e85TmrfQapsWJu9Xp3gabikZVL907MVi';
+
     private function activeRow(int $invalidLogins): array
     {
         return [
             'id'              => 1,
             'username'        => 'alice',
-            'email'           => 'alice@example.com',
-            'password'        => auth_hash_password('correct'),
+            'email'           => 'test@jardyx.com',
+            'password'        => self::BCRYPT_CORRECT,
             'activation_code' => 'activated',
             'disabled'        => '0',
             'invalidLogins'   => $invalidLogins,

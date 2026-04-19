@@ -51,11 +51,14 @@ function auth_count_recent_ip_fails(mysqli $con, string $ip): int
     if ($stmt === false) return 0;
     $stmt->bind_param('s', $ip);
     $stmt->execute();
-    $count = 0;
-    $stmt->bind_result($count);
-    $stmt->fetch();
+    $result = $stmt->get_result();
+    $count  = 0;
+    if ($result !== false) {
+        $row   = $result->fetch_row();
+        $count = (int) ($row[0] ?? 0);
+    }
     $stmt->close();
-    return (int) $count;
+    return $count;
 }
 
 /**
@@ -375,17 +378,10 @@ function auth_auto_blacklist(
 /**
  * Authenticate a user against auth_accounts.
  *
- * Steps:
- *  1. Blacklist check — immediate rejection for blocked IPs.
- *  2. Rate-limit check — logs the event (scorable as +5) then evaluates score.
- *  3. User lookup — generic error to prevent username enumeration.
- *  4. Activation check (activation_code must equal 'activated').
- *  5. Disabled check.
- *  6. Per-user lockout gate (invalidLogins >= USER_LOCKOUT_THRESHOLD).
- *  7. Password verify (bcrypt via password_verify).
- *  8. Transparent bcrypt-13 rehash on successful login.
- *  9. Session fixation prevention (session_regenerate_id).
- * 10. Theme cookie sync.
+ * Checks the IP blacklist and rate limiter first, then looks up the user row,
+ * validates activation/disabled/lockout state, verifies the bcrypt password,
+ * transparently rehashes to cost 13 if needed, and sets up the session.
+ * For TOTP-enrolled accounts, returns totp_required instead of completing login.
  *
  * @return array ['ok' => true, 'username' => string]
  *            or ['ok' => false, 'error' => string]
@@ -395,12 +391,12 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
     $ip    = getUserIpAddr();
     $table = AUTH_DB_PREFIX . 'auth_accounts';
 
-    // Step 1: blacklist — immediate rejection, no delay.
+    // Blacklist — immediate rejection, no delay.
     if (auth_is_blacklisted($con, $ip)) {
         return ['ok' => false, 'error' => 'Ihre IP-Adresse wurde gesperrt.'];
     }
 
-    // Step 2: rate-limit — log the event (scorable as +5) then check score.
+    // Rate-limit — log the event (scorable as +5) then check score.
     if (auth_is_rate_limited($ip)) {
         appendLog($con, 'login', 'Rate limit triggered.');
         $scored = auth_compute_ip_score($con, $ip);
@@ -411,7 +407,7 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
         return ['ok' => false, 'error' => 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten.'];
     }
 
-    // Step 3: user lookup.
+    // User lookup.
     $stmt = $con->prepare(
         "SELECT id, username, password, email,
                 (img_blob IS NOT NULL) AS has_avatar,
@@ -447,14 +443,14 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
         return ['ok' => false, 'error' => 'Benutzer ist gesperrt.'];
     }
 
-    // Step 4: per-user lockout gate (before bcrypt — no expensive hash needed).
+    // Per-user lockout gate (before bcrypt — no expensive hash needed).
     if ((int) $row['invalidLogins'] >= USER_LOCKOUT_THRESHOLD) {
         appendLog($con, 'login', "Login rejected: account locked ({$username}).");
         auth_apply_progressive_delay($con, $ip);
         return ['ok' => false, 'error' => 'Konto gesperrt. Bitte wenden Sie sich an einen Administrator.'];
     }
 
-    // Step 5: password verify.
+    // Password verify.
     if (!password_verify($password, $row['password'])) {
         auth_record_failure($ip);
         $upd = $con->prepare("UPDATE {$table} SET invalidLogins = invalidLogins + 1 WHERE username = ?");
