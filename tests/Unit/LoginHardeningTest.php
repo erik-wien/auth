@@ -6,17 +6,6 @@ use PHPUnit\Framework\TestCase;
 
 class LoginHardeningTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        $_SERVER['REMOTE_ADDR'] = '10.0.0.1';
-        file_put_contents(RATE_LIMIT_FILE, '{}');
-    }
-
-    protected function tearDown(): void
-    {
-        file_put_contents(RATE_LIMIT_FILE, '{}');
-    }
-
     // ── auth_compute_progressive_delay ────────────────────────────────────────
 
     public function test_delay_zero_fails_is_zero(): void
@@ -41,6 +30,7 @@ class LoginHardeningTest extends TestCase
 
     public function test_delay_capped_at_thirty_seconds(): void
     {
+        $this->assertSame(30, auth_compute_progressive_delay(6));
         $this->assertSame(30, auth_compute_progressive_delay(7));
         $this->assertSame(30, auth_compute_progressive_delay(100));
     }
