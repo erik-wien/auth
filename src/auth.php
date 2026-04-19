@@ -12,6 +12,28 @@ define('RATE_LIMIT_MAX',        5);
 define('RATE_LIMIT_WINDOW',     900);
 define('BLACKLIST_AUTO_STRIKES', 2);   // RL events before an IP is auto-blacklisted
 
+// ── Login hardening constants ─────────────────────────────────────────────────
+
+define('USER_LOCKOUT_THRESHOLD',          10); // invalidLogins >= this → account locked
+define('LOGIN_SCORE_FAIL_EXISTING_USER',   1); // scored from auth_log 60-min window
+define('LOGIN_SCORE_FAIL_UNKNOWN_USER',    3);
+define('LOGIN_SCORE_RL_STRIKE',            5); // rate-limit event
+define('LOGIN_SCORE_BLACKLIST_THRESHOLD', 15);
+
+/**
+ * Compute the progressive response delay in seconds for a given fail count.
+ * Pure function — no DB access, safe to call from tests.
+ *
+ * delay = min(30, 2^(failCount−1)) for failCount ≥ 1, else 0.
+ */
+function auth_compute_progressive_delay(int $failCount): int
+{
+    if ($failCount < 1) return 0;
+    // Cap the exponent before computing to avoid int overflow on large failCounts.
+    $exp = min($failCount - 1, 5); // 2^5 = 32 > 30; beyond that min() clamps to 30
+    return min(30, (int) (2 ** $exp));
+}
+
 // ── General-purpose rate limiter ──────────────────────────────────────────────
 
 /**
