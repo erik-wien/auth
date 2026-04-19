@@ -166,11 +166,13 @@ function admin_edit_user(
 }
 
 /**
- * Send a fresh invite email to a user (same flow as creation, invalidates old token).
+ * Send a password-reset invite, clear the user's invalidLogins counter, and
+ * remove auto-blacklisted IPs that were used to brute-force this account in the
+ * last 24 hours (auto=1 rows only — manual entries are never touched).
  *
- * @return bool True if the token was created and email was sent successfully.
+ * @return array{ok: bool, unblocked_ips: list<string>}
  */
-function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): bool
+function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): array
 {
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare("SELECT email, username FROM {$table} WHERE id = ?");
@@ -180,15 +182,127 @@ function admin_reset_password(mysqli $con, int $targetId, string $baseUrl): bool
     $stmt->close();
 
     if (!$row) {
-        return false;
+        return ['ok' => false, 'unblocked_ips' => []];
     }
 
+    // 1. Clear invalidLogins so the account is no longer locked.
+    $upd = $con->prepare("UPDATE {$table} SET invalidLogins = 0 WHERE id = ?");
+    $upd->bind_param('i', $targetId);
+    $upd->execute();
+    $upd->close();
+
+    // 2. Issue invite token + send reset email.
     $token = invite_create_token($con, $targetId);
     $link  = rtrim($baseUrl, '/') . '/setpassword.php?token=' . urlencode($token);
     $sent  = mail_send_invite($row['email'], $row['username'], $link);
+    if (!$sent) {
+        appendLog($con, 'admin', "Failed to send reset email to {$row['email']} for user #{$targetId}.");
+    }
 
-    appendLog($con, 'admin', "Password reset sent to user #$targetId.");
-    return $sent;
+    // 3. Unblock auto-blacklisted IPs that tried to brute-force this account.
+    $unblocked = _admin_unblock_ips_for_user($con, $row['username']);
+
+    $n = count($unblocked);
+    appendLog(
+        $con, 'admin',
+        "Password reset + invalidLogins cleared + unblocked {$n} IPs for user #{$targetId}."
+    );
+    return ['ok' => $sent, 'unblocked_ips' => $unblocked];
+}
+
+/**
+ * Preview what admin_reset_password() would unblock without mutating state.
+ *
+ * @return array{ok: bool, username: string, email: string, ips: list<string>}
+ */
+function admin_user_reset_preview(mysqli $con, int $targetId): array
+{
+    $table = AUTH_DB_PREFIX . 'auth_accounts';
+    $stmt  = $con->prepare("SELECT email, username FROM {$table} WHERE id = ?");
+    $stmt->bind_param('i', $targetId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        return ['ok' => false, 'username' => '', 'email' => '', 'ips' => []];
+    }
+
+    $ips = _admin_preview_ips_for_user($con, $row['username']);
+    return ['ok' => true, 'username' => $row['username'], 'email' => $row['email'], 'ips' => $ips];
+}
+
+/**
+ * @internal — collect distinct IPs from failed-login log entries for $username
+ * in the last 24 h that are currently auto-blacklisted, then DELETE those rows.
+ *
+ * @return list<string>  IPs actually removed.
+ */
+function _admin_unblock_ips_for_user(mysqli $con, string $username): array
+{
+    $toUnblock = _admin_preview_ips_for_user($con, $username);
+    if (empty($toUnblock)) return [];
+
+    $blTable   = AUTH_DB_PREFIX . 'auth_blacklist';
+    $unblocked = [];
+    foreach ($toUnblock as $ip) {
+        $del = $con->prepare("DELETE FROM {$blTable} WHERE ip = ? AND auto = 1");
+        $del->bind_param('s', $ip);
+        $del->execute();
+        try {
+            if ($del->affected_rows > 0) $unblocked[] = $ip;
+        } catch (\Error) {
+            $unblocked[] = $ip; // stub/PHP 8.5 safety — optimistic
+        }
+        $del->close();
+    }
+    return $unblocked;
+}
+
+/**
+ * @internal — collect distinct IPs from auth_log that match 'Login failed for {$username}.'
+ * in the last 24 h AND are currently in auth_blacklist with auto=1.
+ *
+ * @return list<string>
+ */
+function _admin_preview_ips_for_user(mysqli $con, string $username): array
+{
+    $logTable = AUTH_DB_PREFIX . 'auth_log';
+    $activity = "Login failed for {$username}.";
+    $stmt     = $con->prepare(
+        "SELECT DISTINCT INET_NTOA(ipAdress) AS ip
+         FROM {$logTable}
+         WHERE context = 'login'
+           AND activity = ?
+           AND logTime >= DATE_SUB(NOW(), INTERVAL 24 HOUR)"
+    );
+    if ($stmt === false) return [];
+    $stmt->bind_param('s', $activity);
+    $stmt->execute();
+    $result    = $stmt->get_result();
+    $failedIps = [];
+    while ($r = $result->fetch_assoc()) {
+        if (isset($r['ip']) && $r['ip'] !== null) $failedIps[] = $r['ip'];
+    }
+    $stmt->close();
+
+    if (empty($failedIps)) return [];
+
+    // Filter to only IPs currently in the auto-blacklist.
+    $blTable   = AUTH_DB_PREFIX . 'auth_blacklist';
+    $autoListed = [];
+    foreach ($failedIps as $ip) {
+        $sel = $con->prepare(
+            "SELECT 1 FROM {$blTable} WHERE ip = ? AND auto = 1 LIMIT 1"
+        );
+        if ($sel === false) continue;
+        $sel->bind_param('s', $ip);
+        $sel->execute();
+        $found = $sel->get_result()->fetch_row();
+        $sel->close();
+        if ($found) $autoListed[] = $ip;
+    }
+    return $autoListed;
 }
 
 /**

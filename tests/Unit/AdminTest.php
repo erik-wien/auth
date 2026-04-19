@@ -49,7 +49,7 @@ class AdminTest extends TestCase
 
         // mail_send_invite will fail because no jardyx-mail.ini exists in the test env —
         // admin_create_user logs the failure and continues.
-        admin_create_user($con, 'alice', 'alice@example.com', 'User', 'http://localhost/app');
+        admin_create_user($con, 'alice', 'test@jardyx.com', 'User', 'http://localhost/app');
 
         $this->assertMatchesRegularExpression('/INSERT INTO.*auth_accounts/i', $sqls[0]);
         $this->assertStringContainsString('disabled', $sqls[0]);
@@ -66,7 +66,7 @@ class AdminTest extends TestCase
         );
         $stmt->method('close')->willReturn(true);
 
-        admin_create_user($this->stubCon($stmt), 'alice', 'alice@example.com', 'User', 'http://localhost/app');
+        admin_create_user($this->stubCon($stmt), 'alice', 'test@jardyx.com', 'User', 'http://localhost/app');
     }
 
     public function test_create_user_throws_on_duplicate_email(): void
@@ -76,11 +76,11 @@ class AdminTest extends TestCase
         $stmt = $this->createStub(\mysqli_stmt::class);
         $stmt->method('bind_param')->willReturn(true);
         $stmt->method('execute')->willThrowException(
-            new \mysqli_sql_exception("Duplicate entry 'alice@example.com' for key 'email'", 1062)
+            new \mysqli_sql_exception("Duplicate entry 'test@jardyx.com' for key 'email'", 1062)
         );
         $stmt->method('close')->willReturn(true);
 
-        admin_create_user($this->stubCon($stmt), 'bob', 'alice@example.com', 'User', 'http://localhost/app');
+        admin_create_user($this->stubCon($stmt), 'bob', 'test@jardyx.com', 'User', 'http://localhost/app');
     }
 
     // ── admin_delete_user ─────────────────────────────────────────────────────
@@ -120,7 +120,9 @@ class AdminTest extends TestCase
         $con = $this->createStub(\mysqli::class);
         $con->method('prepare')->willReturn($stmt);
 
-        $this->assertFalse(admin_reset_password($con, 999, 'http://localhost/app'));
+        $result = admin_reset_password($con, 999, 'http://localhost/app');
+        $this->assertIsArray($result);
+        $this->assertFalse($result['ok']);
     }
 
     public function test_reset_password_issues_select_sql(): void
