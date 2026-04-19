@@ -178,9 +178,9 @@ class AdminTest extends TestCase
                 : $logStmt
         );
 
-        admin_edit_user($con, 1, 'user@example.com', 'SuperAdmin', 0, 0);
+        admin_edit_user($con, 1, 'user@example.com', 'SuperAdmin', 0);
 
-        // bind_param signature: ('ssiii', $email, $rights, $disabled, $debug, $id)
+        // bind_param signature: ('sssi', $email, $rights, $disabled, $id)
         // Index 0: type string, Index 2: rights value
         $this->assertSame('User', $capturedParams[2]);
     }
@@ -190,7 +190,7 @@ class AdminTest extends TestCase
         $sqls = [];
         $con  = $this->captureCon($sqls);
 
-        admin_edit_user($con, 1, 'user@example.com', 'Admin', 0, 0);
+        admin_edit_user($con, 1, 'user@example.com', 'Admin', 0);
 
         $this->assertMatchesRegularExpression('/UPDATE.*auth_accounts/i', $sqls[0]);
     }

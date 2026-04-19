@@ -142,7 +142,7 @@ function auth_remember_validate(mysqli $con): ?array
     $userStmt  = $con->prepare(
         "SELECT id, username, password, email,
                 (img_blob IS NOT NULL) AS has_avatar,
-                activation_code, disabled, invalidLogins, debug, rights, theme, totp_secret
+                activation_code, disabled, invalidLogins, rights, theme, totp_secret
          FROM {$acctTable} WHERE id = ?"
     );
     if ($userStmt === false) return null;
@@ -231,6 +231,26 @@ function auth_remember_delete_all(mysqli $con, int $userId): void
     $stmt->bind_param('i', $userId);
     $stmt->execute();
     $stmt->close();
+}
+
+/**
+ * User-initiated "log out of all devices": revoke every remember-me token for
+ * the currently logged-in user and clear the current request's cookie so the
+ * browser stops sending the (now invalid) selector. Does NOT destroy the local
+ * PHP session — the caller keeps their active login on the current app.
+ *
+ * Returns false if there is no active session (defensive: never deletes
+ * anonymously). Writes an audit entry with context 'sec'.
+ */
+function auth_remember_revoke_all(mysqli $con): bool
+{
+    $userId = (int) ($_SESSION['id'] ?? 0);
+    if ($userId <= 0) return false;
+
+    auth_remember_delete_all($con, $userId);
+    _auth_remember_setcookie('', time() - 3600);
+    appendLog($con, 'sec', 'Revoked all remember-me tokens.');
+    return true;
 }
 
 /** @internal */

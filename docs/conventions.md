@@ -24,7 +24,7 @@ Every POST that mutates state calls `csrf_verify()` and aborts on failure.
 
 ## 3. Session fields are fixed
 
-The library sets these on login: `loggedin`, `sId`, `id`, `username`, `email`, `img`, `img_type`, `has_avatar`, `disabled`, `debug`, `rights`, `theme`. Consumer apps **read** them; they do not invent new top-level `$_SESSION` keys for persistent state. If you need to persist user state across requests, it belongs in a DB table, not the session.
+The library sets these on login: `loggedin`, `sId`, `id`, `username`, `email`, `img`, `img_type`, `has_avatar`, `disabled`, `rights`, `theme`. Consumer apps **read** them; they do not invent new top-level `$_SESSION` keys for persistent state. If you need to persist user state across requests, it belongs in a DB table, not the session.
 
 Short-lived, request-scoped scratch data (flash alerts, one-shot tokens) is fine.
 

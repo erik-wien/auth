@@ -60,13 +60,3 @@ function auth_require(): void {
     }
 }
 
-/**
- * Log a debug message when the current user has the debug flag set.
- * No-op when $_SESSION['debug'] is falsy.
- */
-function logDebug(string $label, string $message): void {
-    global $con;
-    if ($_SESSION['debug'] ?? false) {
-        appendLog($con, $label, $message);
-    }
-}

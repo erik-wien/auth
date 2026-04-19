@@ -8,7 +8,7 @@ class LogTest extends TestCase
 {
     protected function setUp(): void
     {
-        unset($_SESSION['alerts'], $_SESSION['loggedin'], $_SESSION['debug']);
+        unset($_SESSION['alerts'], $_SESSION['loggedin']);
         $_SERVER['REMOTE_ADDR'] = '1.2.3.4';
     }
 

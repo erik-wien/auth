@@ -3,7 +3,7 @@
  * src/admin.php — User administration functions.
  *
  * Requires:
- *  - AUTH_DB_PREFIX constant (e.g. 'jardyx_auth.' or '')
+ *  - AUTH_DB_PREFIX constant (e.g. 'auth.' or '')
  *  - invite_create_token() from src/invite.php
  *  - mail_send_invite() from src/mail_helpers.php
  *  - appendLog() from src/log.php
@@ -27,7 +27,7 @@ function admin_require(): void
  * Apps should call this and then merge their own per-user preference tables by id.
  *
  * @return array{
- *   users: list<array{id: int, username: string, email: string, rights: string, disabled: int, debug: int}>,
+ *   users: list<array{id: int, username: string, email: string, rights: string, disabled: int}>,
  *   total: int,
  *   page: int,
  *   per_page: int
@@ -42,13 +42,13 @@ function admin_list_users(mysqli $con, int $page = 1, int $perPage = 25, string 
         $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $filter);
         $like    = '%' . $escaped . '%';
         $stmt    = $con->prepare(
-            "SELECT id, username, email, rights, disabled, debug
+            "SELECT id, username, email, rights, disabled
              FROM {$table} WHERE username LIKE ? ORDER BY username LIMIT ? OFFSET ?"
         );
         $stmt->bind_param('sii', $like, $perPage, $offset);
     } else {
         $stmt = $con->prepare(
-            "SELECT id, username, email, rights, disabled, debug
+            "SELECT id, username, email, rights, disabled
              FROM {$table} ORDER BY username LIMIT ? OFFSET ?"
         );
         $stmt->bind_param('ii', $perPage, $offset);
@@ -64,7 +64,6 @@ function admin_list_users(mysqli $con, int $page = 1, int $perPage = 25, string 
             'email'    => $row['email'],
             'rights'   => $row['rights'],
             'disabled' => (int) $row['disabled'],
-            'debug'    => (int) $row['debug'],
         ];
     }
     $stmt->close();
@@ -137,18 +136,16 @@ function admin_edit_user(
     string $email,
     string $rights,
     int    $disabled,
-    int    $debug,
     bool   $totp_reset = false
 ): bool {
     $table  = AUTH_DB_PREFIX . 'auth_accounts';
     $rights = in_array($rights, ['Admin', 'User'], true) ? $rights : 'User';
 
     $stmt = $con->prepare(
-        "UPDATE {$table} SET email = ?, rights = ?, disabled = ?, debug = ? WHERE id = ?"
+        "UPDATE {$table} SET email = ?, rights = ?, disabled = ? WHERE id = ?"
     );
     $disabledEnum = $disabled ? '1' : '0';
-    $debugEnum    = $debug    ? '1' : '0';
-    $stmt->bind_param('ssssi', $email, $rights, $disabledEnum, $debugEnum, $targetId);
+    $stmt->bind_param('sssi', $email, $rights, $disabledEnum, $targetId);
     $stmt->execute();
     try {
         $ok = $stmt->affected_rows > 0;

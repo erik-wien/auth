@@ -17,7 +17,6 @@ class TotpAuthTest extends TestCase
             'activation_code' => 'activated',
             'disabled'        => 0,
             'invalidLogins'   => 0,
-            'debug'           => 0,
             'rights'          => 'User',
             'theme'           => 'auto',
             'totp_secret'     => null,

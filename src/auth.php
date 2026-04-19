@@ -4,7 +4,7 @@
  *
  * Requires:
  *  - RATE_LIMIT_FILE constant (path to the JSON rate-limit file, writable by web server)
- *  - AUTH_DB_PREFIX constant (e.g. 'jardyx_auth.' or '') defined by the consumer project
+ *  - AUTH_DB_PREFIX constant (e.g. 'auth.' or '') defined by the consumer project
  *  - getUserIpAddr(), appendLog() from src/log.php
  */
 
@@ -279,7 +279,7 @@ function auth_login(mysqli $con, string $username, string $password, bool $remem
     $stmt = $con->prepare(
         "SELECT id, username, password, email,
                 (img_blob IS NOT NULL) AS has_avatar,
-                activation_code, disabled, invalidLogins, debug, rights, theme, totp_secret
+                activation_code, disabled, invalidLogins, rights, theme, totp_secret
          FROM {$table} WHERE username = ?"
     );
     if ($stmt === false) {
@@ -373,7 +373,6 @@ function _auth_setup_session(mysqli $con, array $row, bool $remember = false): v
     $_SESSION['email']      = $row['email'];
     $_SESSION['has_avatar'] = (bool) ($row['has_avatar'] ?? false);
     $_SESSION['disabled']   = $row['disabled'];
-    $_SESSION['debug']      = $row['debug'];
     $_SESSION['rights']     = $row['rights'];
     $_SESSION['theme']      = $row['theme'] ?: 'auto';
 
