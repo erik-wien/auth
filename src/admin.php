@@ -431,6 +431,7 @@ function admin_impersonate_begin(mysqli $con, int $targetId): bool
         'disabled'   => (int)    ($_SESSION['disabled']   ?? 0),
         'rights'     => (string) ($_SESSION['rights']     ?? ''),
         'theme'      => (string) ($_SESSION['theme']      ?? 'auto'),
+        'sId'        => (string) ($_SESSION['sId']        ?? ''),
     ];
 
     $_SESSION['id']         = (int)    $target['id'];
@@ -442,6 +443,7 @@ function admin_impersonate_begin(mysqli $con, int $targetId): bool
     $_SESSION['disabled']   = (int) $target['disabled'];
     $_SESSION['rights']     = (string) $target['rights'];
     $_SESSION['theme']      = (string) ($target['theme'] ?? 'auto');
+    $_SESSION['sId']        = '';
 
     session_regenerate_id(true);
 
@@ -478,6 +480,7 @@ function admin_impersonate_end(mysqli $con): bool
     $_SESSION['disabled']   = (int)    ($stash['disabled']   ?? 0);
     $_SESSION['rights']     = (string) ($stash['rights']     ?? '');
     $_SESSION['theme']      = (string) ($stash['theme']      ?? 'auto');
+    $_SESSION['sId']        = (string) ($stash['sId']        ?? '');
     unset($_SESSION['impersonator']);
 
     session_regenerate_id(true);

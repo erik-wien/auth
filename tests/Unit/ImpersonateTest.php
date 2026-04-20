@@ -59,6 +59,7 @@ class ImpersonateTest extends TestCase
         $_SESSION['disabled']   = 0;
         $_SESSION['rights']     = 'Admin';
         $_SESSION['theme']      = 'auto';
+        $_SESSION['sId']        = 'abc123admin';
     }
 
     // ── admin_is_impersonating ────────────────────────────────────────────
@@ -144,10 +145,13 @@ class ImpersonateTest extends TestCase
         $this->assertSame(2, $_SESSION['id']);
         $this->assertSame('bob', $_SESSION['username']);
         $this->assertSame('User', $_SESSION['rights']);
-        // Admin stashed
+        // sId cleared for impersonated identity
+        $this->assertSame('', $_SESSION['sId']);
+        // Admin stashed — including sId
         $this->assertSame(1, $_SESSION['impersonator']['id']);
         $this->assertSame('alice', $_SESSION['impersonator']['username']);
         $this->assertSame('Admin', $_SESSION['impersonator']['rights']);
+        $this->assertSame('abc123admin', $_SESSION['impersonator']['sId']);
     }
 
     public function test_begin_marks_is_impersonating_true(): void
@@ -176,10 +180,12 @@ class ImpersonateTest extends TestCase
         $_SESSION['has_avatar']   = false;
         $_SESSION['disabled']     = 0;
         $_SESSION['theme']        = 'auto';
+        $_SESSION['sId']          = '';
         $_SESSION['impersonator'] = [
             'id' => 1, 'username' => 'alice', 'email' => 'alice@example.com',
             'img' => '', 'img_type' => '', 'has_avatar' => false,
             'disabled' => 0, 'rights' => 'Admin', 'theme' => 'light',
+            'sId' => 'abc123admin',
         ];
 
         $ok = admin_impersonate_end($this->stubCon());
@@ -189,6 +195,7 @@ class ImpersonateTest extends TestCase
         $this->assertSame('alice', $_SESSION['username']);
         $this->assertSame('Admin', $_SESSION['rights']);
         $this->assertSame('light', $_SESSION['theme']);
+        $this->assertSame('abc123admin', $_SESSION['sId']);
         $this->assertArrayNotHasKey('impersonator', $_SESSION);
     }
 
