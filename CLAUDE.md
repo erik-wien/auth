@@ -47,6 +47,7 @@ auth_logout(): void
 auth_require(): void                   // redirect to login if not authed
 admin_require(): void                  // redirect to index if not admin
 auth_change_password(mysqli, string $old, string $new): bool
+auth_clear_auto_blacklist_ip(mysqli, string $ip): void  // call from executeReset.php after email-confirmed reset
 ```
 
 `auth_login` returns `['ok' => bool, 'error' => ?string, 'totp_required' => bool]`.

@@ -331,6 +331,20 @@ function auth_unblacklist_ip(mysqli $con, string $ip): void {
 }
 
 /**
+ * Remove auto-blacklist entries for an IP (auto=1 rows only — manual entries are never touched).
+ * Call after a password reset confirmed via email link to allow the user to log in from their IP.
+ */
+function auth_clear_auto_blacklist_ip(mysqli $con, string $ip): void
+{
+    $table = AUTH_DB_PREFIX . 'auth_blacklist';
+    $stmt  = $con->prepare("DELETE FROM {$table} WHERE ip = ? AND auto = 1");
+    if ($stmt === false) return;
+    $stmt->bind_param('s', $ip);
+    $stmt->execute();
+    $stmt->close();
+}
+
+/**
  * Auto-blacklist an IP using INSERT IGNORE (does not override a manual entry).
  *
  * When $notifyAdmins is true, sends a blacklist_notice email to all active admins.
