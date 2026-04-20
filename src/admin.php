@@ -390,3 +390,126 @@ function admin_delete_user(mysqli $con, int $targetId, int $requestingUserId): b
     appendLog($con, 'admin', "User #$targetId deleted.");
     return $ok;
 }
+
+/**
+ * Start impersonating $targetId.
+ * Caller must be an Admin (enforce via admin_require() at the consumer endpoint).
+ *
+ * Refuses when: target === self, target missing, target disabled, target is Admin,
+ * or already impersonating (nested impersonation blocked).
+ * Stashes original session under $_SESSION['impersonator'], swaps in target fields,
+ * session_regenerate_id(true), logs the event.
+ */
+function admin_impersonate_begin(mysqli $con, int $targetId): bool
+{
+    $selfId = (int) ($_SESSION['id'] ?? 0);
+
+    if ($targetId === $selfId)             return false;
+    if (!empty($_SESSION['impersonator'])) return false;
+
+    $table = AUTH_DB_PREFIX . 'auth_accounts';
+    $stmt  = $con->prepare(
+        "SELECT id, username, email, img, img_type, disabled, rights, theme
+         FROM {$table} WHERE id = ?"
+    );
+    $stmt->bind_param('i', $targetId);
+    $stmt->execute();
+    $target = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$target)                      return false;
+    if ($target['rights'] === 'Admin') return false;
+    if ((int) $target['disabled'])     return false;
+
+    $_SESSION['impersonator'] = [
+        'id'         => $selfId,
+        'username'   => (string) ($_SESSION['username']   ?? ''),
+        'email'      => (string) ($_SESSION['email']      ?? ''),
+        'img'        => ($_SESSION['img']        ?? ''),
+        'img_type'   => (string) ($_SESSION['img_type']   ?? ''),
+        'has_avatar' => (bool)   ($_SESSION['has_avatar'] ?? false),
+        'disabled'   => (int)    ($_SESSION['disabled']   ?? 0),
+        'rights'     => (string) ($_SESSION['rights']     ?? ''),
+        'theme'      => (string) ($_SESSION['theme']      ?? 'auto'),
+    ];
+
+    $_SESSION['id']         = (int)    $target['id'];
+    $_SESSION['username']   = (string) $target['username'];
+    $_SESSION['email']      = (string) $target['email'];
+    $_SESSION['img']        = $target['img'] ?? '';
+    $_SESSION['img_type']   = (string) ($target['img_type'] ?? '');
+    $_SESSION['has_avatar'] = !empty($target['img']);
+    $_SESSION['disabled']   = (int) $target['disabled'];
+    $_SESSION['rights']     = (string) $target['rights'];
+    $_SESSION['theme']      = (string) ($target['theme'] ?? 'auto');
+
+    session_regenerate_id(true);
+
+    $adminId   = $_SESSION['impersonator']['id'];
+    $adminUser = $_SESSION['impersonator']['username'];
+    appendLog(
+        $con, 'admin',
+        "Admin #{$adminId} ({$adminUser}) began impersonating user #{$targetId} ({$target['username']})."
+    );
+    return true;
+}
+
+/**
+ * End impersonation: restore stashed admin fields, clear the stash,
+ * session_regenerate_id(true), log the exit.
+ * Returns false if there is no active impersonation stash.
+ */
+function admin_impersonate_end(mysqli $con): bool
+{
+    if (empty($_SESSION['impersonator'])) {
+        return false;
+    }
+
+    $stash      = $_SESSION['impersonator'];
+    $targetId   = (int)    ($_SESSION['id']       ?? 0);
+    $targetUser = (string) ($_SESSION['username'] ?? '');
+
+    $_SESSION['id']         = (int)    ($stash['id']         ?? 0);
+    $_SESSION['username']   = (string) ($stash['username']   ?? '');
+    $_SESSION['email']      = (string) ($stash['email']      ?? '');
+    $_SESSION['img']        = $stash['img']        ?? '';
+    $_SESSION['img_type']   = (string) ($stash['img_type']   ?? '');
+    $_SESSION['has_avatar'] = (bool)   ($stash['has_avatar'] ?? false);
+    $_SESSION['disabled']   = (int)    ($stash['disabled']   ?? 0);
+    $_SESSION['rights']     = (string) ($stash['rights']     ?? '');
+    $_SESSION['theme']      = (string) ($stash['theme']      ?? 'auto');
+    unset($_SESSION['impersonator']);
+
+    session_regenerate_id(true);
+
+    $adminId   = (int)    $_SESSION['id'];
+    $adminUser = (string) $_SESSION['username'];
+    appendLog(
+        $con, 'admin',
+        "Admin #{$adminId} ({$adminUser}) ended impersonation of user #{$targetId} ({$targetUser})."
+    );
+    return true;
+}
+
+/** True iff the current session is an impersonated session. */
+function admin_is_impersonating(): bool
+{
+    return !empty($_SESSION['impersonator']);
+}
+
+/**
+ * When impersonating, return the original admin's id and username.
+ * Returns null when not impersonating.
+ *
+ * @return array{id: int, username: string}|null
+ */
+function admin_impersonator_info(): ?array
+{
+    if (empty($_SESSION['impersonator'])) {
+        return null;
+    }
+    return [
+        'id'       => (int)    $_SESSION['impersonator']['id'],
+        'username' => (string) $_SESSION['impersonator']['username'],
+    ];
+}
