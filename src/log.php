@@ -25,6 +25,8 @@ function addAlert(string $type, string $message): void {
 /**
  * Insert a row into auth_log.
  * Uses the global $con MySQLi connection.
+ * If an admin is impersonating another user ($_SESSION['impersonator'] is set),
+ * records the admin's id in the impersonator_id column.
  */
 function appendLog(mysqli $con, string $context, string $activity, string $origin = ''): bool {
     if ($origin === '') {
@@ -32,15 +34,18 @@ function appendLog(mysqli $con, string $context, string $activity, string $origi
     }
     $table = AUTH_DB_PREFIX . 'auth_log';
     $stmt = $con->prepare(
-        "INSERT INTO {$table} (idUser, context, activity, origin, ipAdress, logTime)
-         VALUES (?, ?, ?, ?, INET_ATON(?), CURRENT_TIMESTAMP)"
+        "INSERT INTO {$table} (idUser, impersonator_id, context, activity, origin, ipAdress, logTime)
+         VALUES (?, ?, ?, ?, ?, INET_ATON(?), CURRENT_TIMESTAMP)"
     );
     if ($stmt === false) {
         return false;
     }
-    $id = $_SESSION['id'] ?? 0;
+    $id           = (int) ($_SESSION['id'] ?? 0);
+    $impersonator = isset($_SESSION['impersonator']['id'])
+        ? (int) $_SESSION['impersonator']['id']
+        : null;
     $ip = getUserIpAddr();
-    $stmt->bind_param('issss', $id, $context, $activity, $origin, $ip);
+    $stmt->bind_param('iissss', $id, $impersonator, $context, $activity, $origin, $ip);
     $result = $stmt->execute();
     $stmt->close();
     return $result;

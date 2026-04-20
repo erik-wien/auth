@@ -61,4 +61,83 @@ class LogTest extends TestCase
         $loggedIn = $_SESSION['loggedin'] ?? false;
         $this->assertTrue($loggedIn);
     }
+
+    public function test_append_log_includes_impersonator_id_column_in_sql(): void
+    {
+        $sqls = [];
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')->willReturn(true);
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')
+            ->willReturnCallback(function (string $s) use (&$sqls, $stmt) {
+                $sqls[] = $s;
+                return $stmt;
+            });
+
+        appendLog($con, 'test', 'Hello');
+
+        $this->assertStringContainsString('impersonator_id', $sqls[0]);
+    }
+
+    public function test_append_log_binds_null_impersonator_when_not_impersonating(): void
+    {
+        unset($_SESSION['impersonator']);
+
+        $capturedTypes  = null;
+        $capturedParams = null;
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')
+             ->willReturnCallback(function () use (&$capturedTypes, &$capturedParams) {
+                 $args           = func_get_args();
+                 $capturedTypes  = $args[0];
+                 $capturedParams = array_slice($args, 1);
+                 return true;
+             });
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')->willReturn($stmt);
+
+        appendLog($con, 'test', 'Hello');
+
+        // Type string must be 'iissss' (id INT, impersonator_id INT, context STR, activity STR, origin STR, ip STR)
+        $this->assertSame('iissss', $capturedTypes);
+        $this->assertNull($capturedParams[1]); // impersonator_id is the 2nd bound value
+    }
+
+    public function test_append_log_binds_impersonator_id_when_impersonating(): void
+    {
+        $_SESSION['impersonator'] = [
+            'id' => 7, 'username' => 'admin', 'sId' => '',
+            'email' => '', 'img' => '', 'img_type' => '',
+            'has_avatar' => false, 'disabled' => 0, 'rights' => 'Admin', 'theme' => 'auto',
+        ];
+        $_SESSION['id'] = 3;
+
+        $capturedParams = null;
+
+        $stmt = $this->createStub(\mysqli_stmt::class);
+        $stmt->method('bind_param')
+             ->willReturnCallback(function () use (&$capturedParams) {
+                 $capturedParams = array_slice(func_get_args(), 1);
+                 return true;
+             });
+        $stmt->method('execute')->willReturn(true);
+        $stmt->method('close')->willReturn(true);
+
+        $con = $this->createStub(\mysqli::class);
+        $con->method('prepare')->willReturn($stmt);
+
+        appendLog($con, 'test', 'Hello');
+
+        $this->assertSame(7, $capturedParams[1]); // impersonator_id = 7
+
+        unset($_SESSION['impersonator']);
+    }
 }
