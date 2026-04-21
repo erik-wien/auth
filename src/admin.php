@@ -409,7 +409,9 @@ function admin_impersonate_begin(mysqli $con, int $targetId): bool
 
     $table = AUTH_DB_PREFIX . 'auth_accounts';
     $stmt  = $con->prepare(
-        "SELECT id, username, email, img, img_type, disabled, rights, theme
+        "SELECT id, username, email,
+                (img_blob IS NOT NULL) AS has_avatar,
+                disabled, rights, theme
          FROM {$table} WHERE id = ?"
     );
     $stmt->bind_param('i', $targetId);
@@ -425,8 +427,6 @@ function admin_impersonate_begin(mysqli $con, int $targetId): bool
         'id'         => $selfId,
         'username'   => (string) ($_SESSION['username']   ?? ''),
         'email'      => (string) ($_SESSION['email']      ?? ''),
-        'img'        => ($_SESSION['img']        ?? ''),
-        'img_type'   => (string) ($_SESSION['img_type']   ?? ''),
         'has_avatar' => (bool)   ($_SESSION['has_avatar'] ?? false),
         'disabled'   => (int)    ($_SESSION['disabled']   ?? 0),
         'rights'     => (string) ($_SESSION['rights']     ?? ''),
@@ -437,10 +437,8 @@ function admin_impersonate_begin(mysqli $con, int $targetId): bool
     $_SESSION['id']         = (int)    $target['id'];
     $_SESSION['username']   = (string) $target['username'];
     $_SESSION['email']      = (string) $target['email'];
-    $_SESSION['img']        = $target['img'] ?? '';
-    $_SESSION['img_type']   = (string) ($target['img_type'] ?? '');
-    $_SESSION['has_avatar'] = !empty($target['img']);
-    $_SESSION['disabled']   = (int) $target['disabled'];
+    $_SESSION['has_avatar'] = (bool)   $target['has_avatar'];
+    $_SESSION['disabled']   = (int)    $target['disabled'];
     $_SESSION['rights']     = (string) $target['rights'];
     $_SESSION['theme']      = (string) ($target['theme'] ?? 'auto');
     $_SESSION['sId']        = '';
@@ -474,8 +472,6 @@ function admin_impersonate_end(mysqli $con): bool
     $_SESSION['id']         = (int)    ($stash['id']         ?? 0);
     $_SESSION['username']   = (string) ($stash['username']   ?? '');
     $_SESSION['email']      = (string) ($stash['email']      ?? '');
-    $_SESSION['img']        = $stash['img']        ?? '';
-    $_SESSION['img_type']   = (string) ($stash['img_type']   ?? '');
     $_SESSION['has_avatar'] = (bool)   ($stash['has_avatar'] ?? false);
     $_SESSION['disabled']   = (int)    ($stash['disabled']   ?? 0);
     $_SESSION['rights']     = (string) ($stash['rights']     ?? '');
