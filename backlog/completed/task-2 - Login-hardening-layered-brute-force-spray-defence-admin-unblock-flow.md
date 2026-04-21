@@ -1,9 +1,10 @@
 ---
 id: TASK-2
 title: 'Login hardening: layered brute-force / spray defence + admin unblock flow'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-18 11:06'
+updated_date: '2026-04-20 04:51'
 labels: []
 dependencies: []
 priority: high
@@ -126,17 +127,27 @@ None required — `auth_blacklist` and `auth_log` already support the new logic.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Progressive per-IP delay (capped at 30s) applied from 2nd fail onwards; successful logins are not delayed
-- [ ] #2 auth_login gates on invalidLogins >= USER_LOCKOUT_THRESHOLD and returns 'Konto gesperrt…' without running bcrypt
-- [ ] #3 Shenanigans score computed on-the-fly from auth_log (existing-user +1, unknown-user +3, rate-limit +5) and triggers auth_auto_blacklist at threshold 15
-- [ ] #4 Unknown-username fail is logged to auth_log so it becomes scorable; response remains generic
-- [ ] #5 admin_reset_password clears invalidLogins, deletes auto=1 blacklist rows for IPs the target user failed from in last 24h, leaves auto=0 rows alone
-- [ ] #6 admin_reset_password returns unblocked_ips so the UI can surface them
-- [ ] #7 New admin_user_reset_preview action returns the same IP set without mutating state
-- [ ] #8 Chrome Reset-Password button opens confirmation modal listing username/email/IPs-to-be-unblocked before firing
-- [ ] #9 mail_send_admin_notice() resolves recipients from auth_accounts WHERE rights='Admin' AND disabled=0 AND activation_code='activated' and sends the specified template
-- [ ] #10 user_lockout_notice.md fires exactly once per threshold crossing (not on subsequent locked attempts)
-- [ ] #11 blacklist_notice.md fires from auth_auto_blacklist() only for score-triggered blocks, not manual or library-direct calls
-- [ ] #12 New constants documented in auth/CLAUDE.md; tuneable without touching call sites
-- [ ] #13 PHPUnit: score computation, threshold edge cases (9/10/11 invalidLogins), unblock resolver scope (24h window, auto=1 only), mail recipient query
+- [x] #1 Progressive per-IP delay (capped at 30s) applied from 2nd fail onwards; successful logins are not delayed
+- [x] #2 auth_login gates on invalidLogins >= USER_LOCKOUT_THRESHOLD and returns 'Konto gesperrt…' without running bcrypt
+- [x] #3 Shenanigans score computed on-the-fly from auth_log (existing-user +1, unknown-user +3, rate-limit +5) and triggers auth_auto_blacklist at threshold 15
+- [x] #4 Unknown-username fail is logged to auth_log so it becomes scorable; response remains generic
+- [x] #5 admin_reset_password clears invalidLogins, deletes auto=1 blacklist rows for IPs the target user failed from in last 24h, leaves auto=0 rows alone
+- [x] #6 admin_reset_password returns unblocked_ips so the UI can surface them
+- [x] #7 New admin_user_reset_preview action returns the same IP set without mutating state
+- [x] #8 Chrome Reset-Password button opens confirmation modal listing username/email/IPs-to-be-unblocked before firing
+- [x] #9 mail_send_admin_notice() resolves recipients from auth_accounts WHERE rights='Admin' AND disabled=0 AND activation_code='activated' and sends the specified template
+- [x] #10 user_lockout_notice.md fires exactly once per threshold crossing (not on subsequent locked attempts)
+- [x] #11 blacklist_notice.md fires from auth_auto_blacklist() only for score-triggered blocks, not manual or library-direct calls
+- [x] #12 New constants documented in auth/CLAUDE.md; tuneable without touching call sites
+- [x] #13 PHPUnit: score computation, threshold edge cases (9/10/11 invalidLogins), unblock resolver scope (24h window, auto=1 only), mail recipient query
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All 6 plan tasks implemented and reviewed via subagent-driven development. 138 unit tests passing.
+
+Post-completion regression fix: TASK-2's auto-IP-blacklisting caused users whose IP was blocked during a brute-force attempt to be unable to log in even after resetting their password via the email link. Fixed by adding `auth_clear_auto_blacklist_ip(mysqli $con, string $ip): void` to the library (removes `auto=1` rows only) and calling it from `executeReset.php` in all 5 consumer apps (wlmonitor, Energie, suche, zeiterfassung, simplechat). Email link access proves identity — symmetric with what `admin_reset_password()` already does via `_admin_unblock_ips_for_user()`.
+
+Also fixed stale `assertFalse($bool)` assertion in wlmonitor's `AdminTest.php` (admin_reset_password now returns array).
+<!-- SECTION:FINAL_SUMMARY:END -->

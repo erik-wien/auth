@@ -14,6 +14,7 @@ auth/
 │   ├── totp.php           # TOTP 2FA (enroll, verify, revoke)
 │   ├── admin.php          # admin_* (list/create/edit/delete/reset/require)
 │   ├── invite.php         # invite tokens (create/consume/setpassword)
+│   ├── tokens.php         # auth_reset_token_issue / auth_email_confirmation_issue
 │   ├── csrf.php           # csrf_token / csrf_input / csrf_verify
 │   ├── mailer.php         # mail_send (SMTP dispatch)
 │   ├── mail_template.php  # render_template, placeholder substitution
@@ -54,6 +55,19 @@ auth_clear_auto_blacklist_ip(mysqli, string $ip): void  // call from executeRese
 When `$remember` is true and login succeeds without 2FA, a remember-me token is
 issued. For 2FA accounts, the flag is carried through `$_SESSION['auth_totp_pending']`
 and applied after `auth_totp_complete()`.
+
+**Non-obvious return shapes — read before branching:**
+
+| Function | Success | Failure |
+|---|---|---|
+| `auth_login` | `['ok'=>true, 'username'=>string]` — fully logged in | `['ok'=>true, 'totp_required'=>true]` — credentials OK but TOTP pending (not an error); `['ok'=>false, 'error'=>string]` — rejected |
+| `auth_totp_complete` | `['ok'=>true]` | `['ok'=>false, 'error'=>string]` |
+| `invite_complete` | `true` (bool) | `false` (bool) |
+| `admin_create_user` | `int` — new user's id | throws `mysqli_sql_exception` on DB error |
+| `admin_delete_user` | `true` | `false` — row didn't exist or self-delete attempted |
+
+`auth_login` with TOTP: **`ok` is `true`** even when a second factor is still required.
+Consumer must check `totp_required` before treating the user as authenticated.
 
 Session fields set on login: `loggedin`, `sId`, `id`, `username`, `email`, `img`,
 `img_type`, `has_avatar`, `disabled`, `rights`, `theme`. Apps read these;
@@ -138,6 +152,23 @@ for use in a confirmation modal before committing the reset.
 `admin_delete_user` invokes registered cleanup hooks inside the DELETE transaction.
 Use for cross-DB tables that can't FK to `auth_accounts(id)` — see auth-rules §5.
 
+### Token helpers
+
+```php
+auth_reset_token_issue(mysqli $con, int $userId): array{ok: true, token: string}
+auth_email_confirmation_issue(mysqli $con, int $userId, string $newEmail): array{ok: true, token: string}
+```
+
+`auth_reset_token_issue` deletes any existing `password_resets` row for the user, then
+inserts a new 64-char hex token with a 1-hour TTL. Consumer apps call this instead of
+hand-rolling `bin2hex(random_bytes(32))`.
+
+`auth_email_confirmation_issue` writes `pending_email` and `email_change_code` to
+`auth_accounts` for the given user. Returns the plaintext code to include in the
+confirmation URL.
+
+Both live in `src/tokens.php`.
+
 ### Logging
 
 ```php
@@ -164,6 +195,29 @@ audit trail — origin column distinguishes them).
 | `auth_invite_tokens` | Single-use invite/reset tokens |
 | `password_resets` | Legacy reset tokens (still used by some apps) |
 | `auth_remember_tokens` | 8-day remember-me sessions (CASCADE on delete) |
+
+### Tables touched per function (for DB grant planning)
+
+Use this to determine which tables an app's DB user needs access to.
+Policy: no app gets DELETE on `auth_accounts` — see auth-rules §8.
+
+| Function | Reads | Writes / Deletes |
+|---|---|---|
+| `auth_login` | `auth_accounts`, `auth_blacklist`, `auth_log` | `auth_log` (INSERT), `auth_blacklist` (INSERT/UPDATE), `auth_accounts` (UPDATE `invalidLogins`) |
+| `auth_totp_complete` | — (reads session) | `auth_log` (INSERT) |
+| `auth_change_password` | `auth_accounts` | `auth_accounts` (UPDATE), `auth_remember_tokens` (DELETE), `auth_log` (INSERT) |
+| `auth_reset_token_issue` | — | `password_resets` (DELETE old, INSERT new) |
+| `auth_email_confirmation_issue` | — | `auth_accounts` (UPDATE `pending_email`, `email_change_code`) |
+| `invite_create_token` | — | `auth_invite_tokens` (REPLACE) |
+| `invite_verify_token` | `auth_invite_tokens` | — |
+| `invite_complete` | — | `auth_accounts` (UPDATE), `auth_invite_tokens` (DELETE) |
+| `admin_list_users` | `auth_accounts`, `auth_invite_tokens` | — |
+| `admin_create_user` | `auth_accounts` | `auth_accounts` (INSERT), `auth_invite_tokens` (via `invite_create_token`) |
+| `admin_edit_user` | — | `auth_accounts` (UPDATE), optionally `auth_remember_tokens` (DELETE on TOTP reset) |
+| `admin_reset_password` | `auth_accounts`, `auth_blacklist`, `auth_log` | `auth_accounts` (UPDATE `invalidLogins`), `auth_blacklist` (DELETE auto rows), `password_resets` (INSERT via `admin_reset_password`) |
+| `admin_delete_user` | — | `auth_accounts` (DELETE — needs elevated user), `auth_log` (INSERT) |
+| `auth_remember_try_restore` | `auth_remember_tokens`, `auth_accounts` | `auth_remember_tokens` (UPDATE rotated token) |
+| `appendLog` | — | `auth_log` (INSERT) |
 
 ## Migrations
 
@@ -199,6 +253,21 @@ Every app includes a `Composer path dependency` on `../auth` and calls:
 Apps **never** reimplement login, session handling, CSRF, bcrypt, rate limiting,
 or token patterns. Extend the library instead. See `~/.claude/rules/auth-rules.md`
 for the binding consumer rules.
+
+### Consumer prerequisites
+
+Before using invite / password-reset flows in a new app:
+
+1. **`web/setpassword.php` must exist** — `admin_create_user()` and `admin_reset_password()`
+   send emails with a link to `APP_BASE_URL/setpassword.php`. If the page is missing,
+   users receive a broken link and cannot activate their account or reset their password.
+   Canonical reference implementation: `~/Git/wlmonitor/web/setpassword.php`.
+
+2. **Verify `APP_BASE_URL`** — any email-sending flow (invite, reset, email-change
+   confirmation) builds URLs from `APP_BASE_URL` in `config.yaml`. A stale or
+   incorrect value silently ships broken links. Before going live: confirm
+   `APP_BASE_URL` matches the deployed host and send a test invite to a throwaway
+   account to verify the full round-trip.
 
 <!-- BACKLOG.MD MCP GUIDELINES START -->
 

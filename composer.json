@@ -19,6 +19,7 @@
             "src/mail_template.php",
             "src/mail_helpers.php",
             "src/invite.php",
+            "src/tokens.php",
             "src/admin.php",
             "src/totp.php",
             "src/avatar.php",

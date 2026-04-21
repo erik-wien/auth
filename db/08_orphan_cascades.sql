@@ -14,12 +14,14 @@
 USE auth;
 
 -- password_resets: retain user_id but cascade on delete.
+ALTER TABLE password_resets DROP FOREIGN KEY IF EXISTS fk_pwreset_user;
 ALTER TABLE password_resets
   ADD CONSTRAINT fk_pwreset_user
   FOREIGN KEY (user_id) REFERENCES auth_accounts(id)
   ON DELETE CASCADE;
 
 -- wl_sessions: wlmonitor session tokens keyed by idUser.
+ALTER TABLE wl_sessions DROP FOREIGN KEY IF EXISTS fk_wlsess_user;
 ALTER TABLE wl_sessions
   ADD CONSTRAINT fk_wlsess_user
   FOREIGN KEY (idUser) REFERENCES auth_accounts(id)

@@ -1,9 +1,10 @@
 ---
 id: TASK-1
 title: 'Admin: "Login as another user" (impersonation)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-18 09:56'
+updated_date: '2026-04-21 05:41'
 labels: []
 dependencies: []
 priority: high
