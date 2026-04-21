@@ -40,8 +40,7 @@ class ImpersonateTest extends TestCase
             'id'         => 2,
             'username'   => 'bob',
             'email'      => 'bob@example.com',
-            'img'        => '',
-            'img_type'   => '',
+            'has_avatar' => 0,
             'disabled'   => '0',
             'rights'     => 'User',
             'theme'      => 'auto',
@@ -53,8 +52,6 @@ class ImpersonateTest extends TestCase
         $_SESSION['id']         = 1;
         $_SESSION['username']   = 'alice';
         $_SESSION['email']      = 'alice@example.com';
-        $_SESSION['img']        = '';
-        $_SESSION['img_type']   = '';
         $_SESSION['has_avatar'] = false;
         $_SESSION['disabled']   = 0;
         $_SESSION['rights']     = 'Admin';
